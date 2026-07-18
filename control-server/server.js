@@ -1,0 +1,98 @@
+/* Brain Arcade — control server
+   Pure Node (no dependencies). Serves the dashboard + a small JSON API.
+   Devices (tablets) send heartbeats; the dashboard shows who's online and
+   lets you lock a device or restrict it to certain games.
+
+   Env:
+     PORT         - port to listen on (Render sets this automatically)
+     ADMIN_TOKEN  - optional; if set, changing policy requires this token
+*/
+"use strict";
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+
+const PORT = process.env.PORT || 3000;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+const ONLINE_MS = 40000;
+
+const devices = Object.create(null); // id -> { id, name, app, lastSeen }
+const policies = Object.create(null); // id -> { locked, allowedGames }
+
+function defaultPolicy() { return { locked: false, allowedGames: null }; }
+
+function send(res, code, body, type) {
+    res.writeHead(code, {
+        "Content-Type": type || "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Cache-Control": "no-store"
+    });
+    res.end(Buffer.isBuffer(body) ? body : (typeof body === "string" ? body : JSON.stringify(body)));
+}
+
+function readBody(req) {
+    return new Promise(function (resolve) {
+        let data = "";
+        req.on("data", function (c) { data += c; if (data.length > 1e6) req.destroy(); });
+        req.on("end", function () { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); } });
+    });
+}
+
+const PUBLIC = path.join(__dirname, "public");
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
+
+const server = http.createServer(async function (req, res) {
+    const u = new URL(req.url, "http://localhost");
+    const p = u.pathname;
+
+    if (req.method === "OPTIONS") return send(res, 204, "");
+
+    // ---- API ----
+    if (p === "/api/heartbeat" && req.method === "POST") {
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now() };
+        const pol = policies[b.deviceId] || defaultPolicy();
+        return send(res, 200, { locked: !!pol.locked, allowedGames: pol.allowedGames });
+    }
+
+    if (p === "/api/devices" && req.method === "GET") {
+        const now = Date.now();
+        const list = Object.keys(devices).map(function (id) {
+            const d = devices[id];
+            return {
+                id: d.id, name: d.name, app: d.app,
+                lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
+                policy: policies[id] || defaultPolicy()
+            };
+        }).sort(function (a, b) { return (b.online - a.online) || a.name.localeCompare(b.name); });
+        return send(res, 200, { devices: list, serverTime: now });
+    }
+
+    if (p === "/api/policy" && req.method === "POST") {
+        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        policies[b.deviceId] = {
+            locked: !!b.locked,
+            allowedGames: Array.isArray(b.allowedGames) ? b.allowedGames : null
+        };
+        return send(res, 200, { ok: true, policy: policies[b.deviceId] });
+    }
+
+    if (p === "/api/config" && req.method === "GET") {
+        return send(res, 200, { authRequired: !!ADMIN_TOKEN });
+    }
+
+    // ---- static dashboard ----
+    let file = p === "/" ? "/index.html" : p;
+    const fp = path.join(PUBLIC, path.normalize(file).replace(/^(\.\.[/\\])+/, ""));
+    if (fp.startsWith(PUBLIC) && fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+        return send(res, 200, fs.readFileSync(fp), MIME[path.extname(fp)] || "application/octet-stream");
+    }
+    return send(res, 404, { error: "not found" });
+});
+
+server.listen(PORT, function () { console.log("Brain Arcade control server on :" + PORT); });
