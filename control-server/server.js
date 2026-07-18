@@ -41,6 +41,7 @@ function readBody(req) {
 }
 
 const PUBLIC = path.join(__dirname, "public");
+const GAMES_DIR = path.join(__dirname, "..", "www"); // the playable game bundle
 const MIME = {
     ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
     ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json",
@@ -88,6 +89,20 @@ const server = http.createServer(async function (req, res) {
 
     if (p === "/api/config" && req.method === "GET") {
         return send(res, 200, { authRequired: !!ADMIN_TOKEN });
+    }
+
+    // ---- playable games app (served from the shared www/ bundle) ----
+    if (p === "/play") {
+        res.writeHead(302, { "Location": "/play/" });
+        return res.end();
+    }
+    if (p === "/play/" || p.indexOf("/play/") === 0) {
+        const rel = p === "/play/" ? "/index.html" : p.slice("/play".length);
+        const gp = path.join(GAMES_DIR, path.normalize(rel).replace(/^(\.\.[/\\])+/, ""));
+        if (gp.startsWith(GAMES_DIR) && fs.existsSync(gp) && fs.statSync(gp).isFile()) {
+            return send(res, 200, fs.readFileSync(gp), MIME[path.extname(gp)] || "application/octet-stream");
+        }
+        return send(res, 404, { error: "not found" });
     }
 
     // ---- static dashboard ----

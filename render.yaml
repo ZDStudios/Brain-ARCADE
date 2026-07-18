@@ -3,9 +3,8 @@ services:
     name: brain-arcade-control
     runtime: node
     plan: free
-    rootDir: control-server
     buildCommand: ""
-    startCommand: node server.js
+    startCommand: node control-server/server.js
     envVars:
       - key: ADMIN_TOKEN
         sync: false
