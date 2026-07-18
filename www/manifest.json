@@ -1,0 +1,31 @@
+{
+  "version": "1.1.0",
+  "files": [
+    "css/style.css",
+    "index.html",
+    "js/app.js",
+    "js/games/blockblast.js",
+    "js/games/breakout.js",
+    "js/games/chess.js",
+    "js/games/connect4.js",
+    "js/games/flappy.js",
+    "js/games/g2048.js",
+    "js/games/mathblitz.js",
+    "js/games/memory.js",
+    "js/games/minesweeper.js",
+    "js/games/pong.js",
+    "js/games/puzzle15.js",
+    "js/games/reaction.js",
+    "js/games/reversi.js",
+    "js/games/rushhour.js",
+    "js/games/simon.js",
+    "js/games/snake.js",
+    "js/games/solitaire.js",
+    "js/games/stroop.js",
+    "js/games/sudoku.js",
+    "js/games/tetris.js",
+    "js/games/tictactoe.js",
+    "js/games/whack.js",
+    "js/games/wordle.js"
+  ]
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0B1020" />
+    <title>Brain Arcade</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <!-- Top bar -->
+    <header id="topbar">
+        <button id="backBtn" class="icon-btn" aria-label="Back" hidden>&#8592;</button>
+        <div id="title" class="brand">
+            <span class="brand-mark">&#129504;</span>
+            <span class="brand-text">Brain Arcade</span>
+        </div>
+        <button id="settingsBtn" class="icon-btn" aria-label="Settings">&#9881;</button>
+    </header>
+
+    <!-- Main swappable view -->
+    <main id="view"></main>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- Core -->
+    <script src="js/app.js"></script>
+
+    <!-- Games -->
+    <script src="js/games/tetris.js"></script>
+    <script src="js/games/blockblast.js"></script>
+    <script src="js/games/g2048.js"></script>
+    <script src="js/games/chess.js"></script>
+    <script src="js/games/solitaire.js"></script>
+    <script src="js/games/rushhour.js"></script>
+    <script src="js/games/reversi.js"></script>
+    <script src="js/games/mathblitz.js"></script>
+    <script src="js/games/stroop.js"></script>
+    <script src="js/games/wordle.js"></script>
+    <script src="js/games/snake.js"></script>
+    <script src="js/games/memory.js"></script>
+    <script src="js/games/minesweeper.js"></script>
+    <script src="js/games/sudoku.js"></script>
+    <script src="js/games/simon.js"></script>
+    <script src="js/games/tictactoe.js"></script>
+    <script src="js/games/connect4.js"></script>
+    <script src="js/games/breakout.js"></script>
+    <script src="js/games/whack.js"></script>
+    <script src="js/games/puzzle15.js"></script>
+    <script src="js/games/flappy.js"></script>
+    <script src="js/games/pong.js"></script>
+    <script src="js/games/reaction.js"></script>
+
+    <!-- Boot last so every game has registered -->
+    <script>window.BrainGames.boot();</script>
+</body>
+</html>
