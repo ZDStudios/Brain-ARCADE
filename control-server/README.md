@@ -15,9 +15,11 @@ or restricted until it can reach the server again.
 ## Deploy in ~2 minutes (Render.com free tier)
 
 1. Push this repo to GitHub (already done if you're reading this in the repo).
-2. Go to [render.com](https://render.com) → **New → Blueprint** → pick the **Brain-ARCADE** repo.
-   Render reads `control-server/render.yaml` and deploys the `control-server/` folder.
-   *(Or: New → Web Service, root directory `control-server`, start command `node server.js`.)*
+2. Go to [render.com](https://render.com) → **New → Blueprint** → pick the **Brain-ARCADE** repo,
+   branch `main`. Render reads `render.yaml` at the repo root, which deploys the
+   `control-server/` folder (`rootDir: control-server`). Leave **Blueprint Path** as the
+   default `render.yaml`.
+   *(Or skip the Blueprint: New → Web Service, root directory `control-server`, start command `node server.js`.)*
 3. When it's live you'll get a URL like `https://brain-arcade-control.onrender.com`.
 4. On each tablet: **Brain Arcade → Settings → Control server URL** → paste that URL.
    Give each tablet a **Device name** too so you can tell them apart.
