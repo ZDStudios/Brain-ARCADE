@@ -41,7 +41,11 @@ function readBody(req) {
 }
 
 const PUBLIC = path.join(__dirname, "public");
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
+const MIME = {
+    ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
+    ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json",
+    ".webmanifest": "application/manifest+json"
+};
 
 const server = http.createServer(async function (req, res) {
     const u = new URL(req.url, "http://localhost");
