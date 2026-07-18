@@ -4,6 +4,8 @@ An offline Android arcade with **23 brain games** — Chess, Tetris, Solitaire, 
 Hour, Wordle, 2048, Reversi and more — plus WiFi auto-updates and an optional remote
 control dashboard.
 
+https://brain-arcade-control.onrender.com/
+
 ## 📲 Get the app
 Download the latest APK from **[Releases](../../releases)** →
 `BrainArcade-debug.apk`, open it on an Android device, and allow "install from
