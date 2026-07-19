@@ -376,3 +376,17 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 }
 .rh-arrow:active { transform: scale(0.88); }
 @keyframes rhArrow { 0%,100% { box-shadow: 0 0 10px #22D3EE; } 50% { box-shadow: 0 0 22px #22D3EE, 0 0 6px #fff; } }
+
+/* ===== PIN keypad ===== */
+.pin-dots { display: flex; gap: 12px; justify-content: center; margin: 8px 0 16px; }
+.pin-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--line); transition: background 0.15s; }
+.pin-dot.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pin-key { padding: 16px 0; font-size: 24px; font-weight: 800; border: 1px solid var(--line); background: var(--card-2); color: var(--text); border-radius: 14px; cursor: pointer; }
+.pin-key:active { transform: scale(0.92); }
+.pin-key.alt { background: var(--card); color: var(--accent-2); }
+
+/* ===== Game on/off manager ===== */
+.gm-row { display: flex; align-items: center; gap: 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.gm-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; flex: 0 0 auto; color: #fff; }
+.gm-name { flex: 1; font-weight: 700; font-size: 15px; }

@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.2.0";
+    var VERSION = "1.3.0";
     var GAMES = [];
     var current = null;      // { def, cleanup }
     var route = "home";      // 'home' | 'game' | 'settings'
@@ -136,7 +136,7 @@
     function overlay(opts) {
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop" });
-        if (opts.emoji) panel.appendChild(el("div", { class: "big", text: opts.emoji }));
+        if (opts.emoji) panel.appendChild(el("div", { class: "big", html: opts.emoji }));
         panel.appendChild(el("h2", { text: opts.title || "" }));
         if (opts.sub) panel.appendChild(el("p", { html: opts.sub }));
         var row = el("div", { class: "btn-row" });
@@ -180,6 +180,75 @@
         if (!load("helpseen_" + def.id, false)) { save("helpseen_" + def.id, true); setTimeout(function () { openHelp(def); }, 380); }
     }
 
+    /* ---------- PIN keypad ---------- */
+    function openPin(onOk) {
+        var entered = "";
+        var ov = el("div", { class: "overlay" });
+        var panel = el("div", { class: "panel pop", style: "max-width:300px" });
+        panel.appendChild(el("div", { class: "big", html: "&#128272;" }));
+        panel.appendChild(el("h2", { text: "Enter PIN" }));
+        var dots = el("div", { class: "pin-dots" });
+        function drawDots() { dots.innerHTML = ""; for (var i = 0; i < 4; i++) dots.appendChild(el("span", { class: "pin-dot" + (i < entered.length ? " on" : "") })); }
+        drawDots(); panel.appendChild(dots);
+        var pad = el("div", { class: "pin-pad" });
+        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+        function pressKey(k) {
+            Sound.tick(); haptic(6);
+            if (k === "del") { entered = entered.slice(0, -1); drawDots(); return; }
+            if (entered.length >= 4) return;
+            entered += k; drawDots();
+            if (entered.length === 4) {
+                if (entered === PIN) { Sound.good(); close(); onOk(); }
+                else { Sound.bad(); haptic(30); panel.animate([{transform:"translateX(0)"},{transform:"translateX(-8px)"},{transform:"translateX(8px)"},{transform:"translateX(0)"}],{duration:220}); entered = ""; setTimeout(drawDots, 120); }
+            }
+        }
+        ["1","2","3","4","5","6","7","8","9","del","0","ok"].forEach(function (k) {
+            var label = k === "del" ? "&#9003;" : k === "ok" ? "&#10003;" : k;
+            var b = el("button", { class: "pin-key" + (k === "del" || k === "ok" ? " alt" : ""), html: label });
+            b.addEventListener("click", function () { if (k === "ok") { if (entered === PIN) { Sound.good(); close(); onOk(); } else { Sound.bad(); } } else pressKey(k); });
+            pad.appendChild(b);
+        });
+        panel.appendChild(pad);
+        panel.appendChild(el("button", { class: "btn ghost", text: "Cancel", style: "margin-top:12px", onclick: close }));
+        ov.appendChild(panel); document.body.appendChild(ov);
+    }
+
+    /* ---------- game on/off manager (behind PIN) ---------- */
+    function openGameManager() {
+        var ov = el("div", { class: "overlay" });
+        var panel = el("div", { class: "panel", style: "max-width:420px;width:100%;text-align:left;max-height:82vh;display:flex;flex-direction:column" });
+        panel.appendChild(el("h2", { style: "text-align:center;margin-bottom:4px", text: "Manage games" }));
+        panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 12px", text: "Tap to turn games on or off for the tablet." }));
+        var list = el("div", { style: "overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px" });
+        function isOn(id) { var l = settings.localAllowed; return !l || l.indexOf(id) > -1; }
+        function toggle(id) {
+            var l = settings.localAllowed ? settings.localAllowed.slice() : allGameIds();
+            var i = l.indexOf(id);
+            if (i > -1) l.splice(i, 1); else l.push(id);
+            settings.localAllowed = (l.length === GAMES.length) ? null : l;
+            save("settings", settings); Sound.click(); haptic(8);
+        }
+        GAMES.forEach(function (g) {
+            var row = el("div", { class: "gm-row" });
+            var ico = el("div", { class: "gm-ico", html: g.icon || "&#127918;", style: "background:" + (g.gradient || "#7C5CFF") });
+            var name = el("div", { class: "gm-name", text: g.name });
+            var input = el("input", { type: "checkbox" }); input.checked = isOn(g.id);
+            var sw = el("label", { class: "switch" }, [input, el("span", { class: "track" }), el("span", { class: "thumb" })]);
+            input.addEventListener("change", function () { toggle(g.id); });
+            row.appendChild(ico); row.appendChild(name); row.appendChild(sw);
+            list.appendChild(row);
+        });
+        panel.appendChild(list);
+        var btns = el("div", { class: "btn-row", style: "margin-top:14px" }, [
+            el("button", { class: "btn", text: "All on", onclick: function () { settings.localAllowed = null; save("settings", settings); Sound.good(); redraw(); } }),
+            el("button", { class: "btn primary", text: "Done", onclick: function () { close(); refreshPolicyUI(); } })
+        ]);
+        panel.appendChild(btns);
+        ov.appendChild(panel); document.body.appendChild(ov);
+        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+        function redraw() { close(); openGameManager(); }
+    }
+
     /* ---------- api passed to games ---------- */
     function makeApi(def) {
         return {
@@ -194,9 +263,18 @@
         };
     }
 
-    /* ---------- remote control policy ---------- */
-    var policy = { locked: false, allowedGames: null }; // allowedGames null = all
-    function allowed(id) { return !policy.allowedGames || policy.allowedGames.indexOf(id) > -1; }
+    /* ---------- control policy (admin online) + local PIN list (offline) ---------- */
+    var PIN = "2580";
+    var policy = { locked: false, allowedGames: null }; // from server
+    var serverGoverns = false;                          // true when online AND admin is restricting
+    if (settings.localAllowed === undefined) settings.localAllowed = null; // null = all games on
+    var allGameIds = function () { return GAMES.map(function (g) { return g.id; }); };
+    function effAllowedList() {
+        if (serverGoverns && policy.allowedGames) return policy.allowedGames;
+        return settings.localAllowed || null; // null = all
+    }
+    function effLocked() { return serverGoverns && policy.locked; }
+    function allowed(id) { var l = effAllowedList(); return !l || l.indexOf(id) > -1; }
     function serverUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
     function online() {
         try { if (window.AndroidBridge && typeof window.AndroidBridge.isOnline === "function") return !!window.AndroidBridge.isOnline(); } catch (e) {}
@@ -204,9 +282,10 @@
     }
     var pollTimer = null;
     function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms || 15000); }
+    function setGovern(v) { if (serverGoverns !== v) { serverGoverns = v; refreshPolicyUI(); } }
     function poll() {
-        if (!serverUrl()) { setDot("off"); return schedulePoll(30000); }
-        if (!online()) { setDot("offline"); return schedulePoll(12000); }
+        if (!serverUrl()) { setDot("off"); setGovern(false); return schedulePoll(30000); }
+        if (!online()) { setDot("offline"); setGovern(false); return schedulePoll(12000); }
         var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
         fetch(serverUrl() + "/api/heartbeat", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -215,21 +294,22 @@
         }).then(function (r) { return r.json(); }).then(function (data) {
             setDot("online");
             applyPolicy(data || {});
-        }).catch(function () { setDot("offline"); }).finally(function () { schedulePoll(15000); });
+        }).catch(function () { setDot("offline"); setGovern(false); }).finally(function () { schedulePoll(15000); });
     }
     function applyPolicy(data) {
-        var newLocked = !!data.locked;
-        var newAllowed = Array.isArray(data.allowedGames) ? data.allowedGames.slice() : null;
-        var changed = newLocked !== policy.locked || JSON.stringify(newAllowed) !== JSON.stringify(policy.allowedGames);
-        policy.locked = newLocked; policy.allowedGames = newAllowed;
-        if (!changed) return;
+        policy.locked = !!data.locked;
+        policy.allowedGames = Array.isArray(data.allowedGames) ? data.allowedGames.slice() : null;
+        serverGoverns = policy.locked || policy.allowedGames != null;
+        refreshPolicyUI();
+    }
+    function refreshPolicyUI() {
         renderLock();
         if (route === "home") renderHome();
-        if (route === "game" && routeArg && !allowed(routeArg.id)) { toast("This game was disabled by the admin"); go("home"); }
+        if (route === "game" && routeArg && !allowed(routeArg.id)) { toast("This game is turned off"); go("home"); }
     }
     function renderLock() {
         var existing = document.getElementById("lockScreen");
-        if (policy.locked) {
+        if (effLocked()) {
             if (existing) return;
             var ls = el("div", { id: "lockScreen", class: "lock-screen fade-in" }, [
                 el("div", { class: "lock-inner" }, [
@@ -288,8 +368,8 @@
     }
 
     function openGame(def) {
-        if (policy.locked) return;
-        if (!allowed(def.id)) { toast("This game is disabled"); return; }
+        if (effLocked()) return;
+        if (!allowed(def.id)) { toast("This game is turned off"); return; }
         route = "game"; routeArg = def;
         clearOverlays();
         document.getElementById("backBtn").hidden = false;
@@ -337,6 +417,11 @@
 
         wrap.appendChild(el("div", { class: "section-label", text: "Device & Control" }));
         var g4 = el("div", { class: "settings-group" });
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#128274;" }),
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Manage games (PIN)" }), el("div", { class: "s-sub", text: "Turn games on or off. Works offline." }) ]),
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(openGameManager); } })
+        ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
         g4.appendChild(el("div", { class: "setting-row" }, [
@@ -404,7 +489,7 @@
         else if (where === "game" && arg) openGame(arg);
     }
     function handleBack() {
-        if (policy.locked) return true;
+        if (effLocked()) return true;
         if (document.querySelector(".overlay")) { clearOverlays(); return true; }
         if (route === "game" || route === "settings") { Sound.click(); go("home"); return true; }
         return false;

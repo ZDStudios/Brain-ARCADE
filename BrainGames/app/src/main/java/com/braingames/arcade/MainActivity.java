@@ -41,7 +41,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.2.0";
+    private static final String BUNDLED_VERSION = "1.3.0";
 
     private WebView webView;
     private SharedPreferences prefs;
@@ -102,25 +102,25 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return false; }
     }
 
-    /** Fetch the remote manifest and, if the version differs, download the new bundle. */
+    /** Fetch the single bundle.json (all games in one file) and, if newer, install it. */
     private void checkForUpdate(boolean manual) {
         try {
-            String manifestStr = httpGet(UPDATE_BASE + "manifest.json");
-            if (manifestStr == null) return;
-            JSONObject manifest = new JSONObject(manifestStr);
-            String remoteVersion = manifest.optString("version", "");
+            String bundleStr = httpGet(UPDATE_BASE + "bundle.json");
+            if (bundleStr == null) return;
+            JSONObject bundle = new JSONObject(bundleStr);
+            String remoteVersion = bundle.optString("version", "");
             String installed = prefs.getString("installedVersion", BUNDLED_VERSION);
             if (remoteVersion.isEmpty() || remoteVersion.equals(installed)) return;
 
-            JSONArray files = manifest.getJSONArray("files");
+            JSONObject files = bundle.getJSONObject("files"); // { "js/app.js": "<content>", ... }
             File stage = new File(getFilesDir(), "www_stage");
             deleteDir(stage);
             stage.mkdirs();
 
-            for (int i = 0; i < files.length(); i++) {
-                String rel = files.getString(i);
-                byte[] data = httpGetBytes(UPDATE_BASE + rel);
-                if (data == null) { deleteDir(stage); return; } // abort on any failure
+            java.util.Iterator<String> keys = files.keys();
+            while (keys.hasNext()) {
+                String rel = keys.next();
+                byte[] data = files.getString(rel).getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 File out = new File(stage, rel);
                 File parent = out.getParentFile();
                 if (parent != null) parent.mkdirs();
