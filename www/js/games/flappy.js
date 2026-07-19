@@ -4,6 +4,7 @@
         id: "flappy", name: "Flappy Bird", icon: "&#128038;",
         gradient: "linear-gradient(135deg,#0EA5E9,#22C55E)",
         best: "high",
+        help: {"emoji":"&#128038;","goal":"Fly through the gaps without crashing.","steps":["Tap the screen to make the bird flap up.","Stop tapping and it gently falls.","Fly through the gaps between the green pipes.","Each pipe you pass scores one point!"]},
         mount: function (host, api) {
             var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.3, 420)), H = Math.round(W * 1.3);
             var bird, pipes, score, over, started, raf, grav, jump, gap, pipeW, speed, spawnX;

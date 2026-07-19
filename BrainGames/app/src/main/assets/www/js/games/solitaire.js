@@ -4,6 +4,7 @@
         id: "solitaire", name: "Solitaire", icon: "&#127183;",
         gradient: "linear-gradient(135deg,#047857,#065F46)",
         best: "low", bestLabel: "Best", bestSuffix: "s",
+        help: {"emoji":"&#127183;","goal":"Move all cards to the 4 top piles, Ace up to King.","steps":["Tap the deck (top-left) to flip cards.","Tap a card, then tap where you want it to go.","On the board, stack down by one and switch colours (red on black).","Send Aces to the top piles, then build up A,2,3...King."]},
         mount: function (host, api) {
             var SUITS = ["♠", "♥", "♦", "♣"];
             var RED = { "♥": 1, "♦": 1 };

@@ -4,6 +4,7 @@
         id: "mathblitz", name: "Math Blitz", icon: "&#10133;",
         gradient: "linear-gradient(135deg,#2563EB,#7C3AED)",
         best: "high",
+        help: {"emoji":"&#10133;","goal":"Answer as many sums as you can in 30 seconds.","steps":["Tap Start and a sum appears.","Tap the button with the correct answer.","Correct answers score; a streak scores bonus points.","Be quick, you only get 30 seconds!"]},
         mount: function (host, api) {
             var score, timeLeft, running, tickTimer, answer, streak;
 

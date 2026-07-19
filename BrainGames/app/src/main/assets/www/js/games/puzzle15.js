@@ -4,6 +4,7 @@
         id: "puzzle15", name: "15 Puzzle", icon: "&#128302;",
         gradient: "linear-gradient(135deg,#0891B2,#4F46E5)",
         best: "low", bestLabel: "Best", bestSuffix: " moves",
+        help: {"emoji":"&#128256;","goal":"Slide the tiles into order from 1 to 15.","steps":["There is one empty space on the board.","Tap a tile next to the space (or swipe) to slide it.","Keep sliding to put the numbers in order.","Finish 1 to 15 in as few moves as you can!"]},
         mount: function (host, api) {
             var N = 4, tiles, blank, moves, solvedGame;
 

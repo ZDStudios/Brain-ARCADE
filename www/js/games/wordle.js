@@ -8,6 +8,7 @@
         id: "wordle", name: "Wordle", icon: "&#128221;",
         gradient: "linear-gradient(135deg,#16A34A,#22D3EE)",
         best: "high", bestLabel: "Streak",
+        help: {"emoji":"&#128221;","goal":"Guess the secret 5-letter word in 6 tries.","steps":["Type any real 5-letter word and press Enter.","Green means right letter in the right spot.","Yellow means the letter is in the word, wrong spot.","Grey means the letter is not in the word."]},
         mount: function (host, api) {
             var target, row, col, letters, done, streak = api.load("streak", 0);
 

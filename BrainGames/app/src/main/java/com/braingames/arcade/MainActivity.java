@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
     // Where over-the-air game updates come from (raw files on the main branch).
     private static final String UPDATE_BASE =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/www/";
-    private static final String BUNDLED_VERSION = "1.1.0";
+    private static final String BUNDLED_VERSION = "1.2.0";
 
     private WebView webView;
     private SharedPreferences prefs;

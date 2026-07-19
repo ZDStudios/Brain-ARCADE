@@ -4,6 +4,7 @@
         id: "snake", name: "Snake", icon: "&#128013;",
         gradient: "linear-gradient(135deg,#059669,#84CC16)",
         best: "high",
+        help: {"emoji":"&#128013;","goal":"Eat food and grow as long as you can.","steps":["Swipe or use the arrow buttons to steer.","Eat the red food to grow longer and score.","Don't crash into the walls.","And don't bite your own tail!"]},
         mount: function (host, api) {
             var N = 17;
             var cell = Math.floor(api.space().board / N), W = cell * N, H = cell * N;

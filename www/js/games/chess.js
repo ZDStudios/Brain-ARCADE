@@ -4,9 +4,15 @@
         id: "chess", name: "Chess", icon: "&#9822;",
         gradient: "linear-gradient(135deg,#1F2937,#4B5563)",
         best: "high", bestLabel: "Wins",
+        help: {"emoji":"&#9823;","goal":"Trap the computer's king (checkmate).","steps":["You play the white pieces at the bottom.","Tap a piece to see its name and where it can go (green dots).","Tap a green dot to move. A red ring means you can capture.","Trap the enemy king so it cannot escape to win!"]},
         mount: function (host, api) {
             var GLYPH = { P:"♙", N:"♘", B:"♗", R:"♖", Q:"♕", K:"♔",
                           p:"♟", n:"♞", b:"♝", r:"♜", q:"♛", k:"♚" };
+            var NAMES = { P:"Pawn", N:"Knight", B:"Bishop", R:"Rook", Q:"Queen", K:"King" };
+            function showTag(p) {
+                if (p) msg.innerHTML = "<span class='piece-tag'>" + GLYPH[p] + " " + (isW(p) ? "Your " : "Enemy ") + NAMES[p.toUpperCase()] + "</span>";
+                else msg.textContent = "Tap one of your pieces to move it.";
+            }
             var VAL = { p:100, n:320, b:330, r:500, q:900, k:20000 };
             var PST = { // simple pawn/knight/king tables (white perspective)
                 p:[0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10, 5,5,10,25,25,10,5,5, 0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5, 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0],
@@ -49,8 +55,10 @@
                 for (var i = 0; i < 64; i++) {
                     var p = board[i], d = cells[i];
                     d.textContent = p ? GLYPH[p] : "";
-                    d.style.color = isW(p) ? "#fff" : "#111";
-                    d.style.textShadow = isW(p) ? "0 1px 2px rgba(0,0,0,0.6)" : "none";
+                    d.style.color = isW(p) ? "#F8FAFC" : "#0B1020";
+                    d.style.textShadow = isW(p)
+                        ? "1px 0 0 #000,-1px 0 0 #000,0 1px 0 #000,0 -1px 0 #000,0 2px 3px rgba(0,0,0,0.6)"
+                        : "1px 0 0 #fff,-1px 0 0 #fff,0 1px 0 #fff,0 -1px 0 #fff,0 2px 3px rgba(255,255,255,0.5)";
                     d.style.boxShadow = "none";
                     d.style.outline = "none";
                 }
@@ -179,11 +187,11 @@
             function onSquare(i) {
                 if (over || aiThinking || turn !== "w") return;
                 var p = board[i];
-                if (sel == null) { if (p && isW(p)) { sel = i; api.sound.tick(); paint(); } return; }
+                if (sel == null) { if (p && isW(p)) { sel = i; api.sound.tick(); showTag(p); paint(); } return; }
                 var mv = legalCache.filter(function (m) { return m.from === sel && m.to === i; })[0];
                 if (mv) { doMove(mv); }
-                else if (p && isW(p)) { sel = i; api.sound.tick(); paint(); }
-                else { sel = null; paint(); }
+                else if (p && isW(p)) { sel = i; api.sound.tick(); showTag(p); paint(); }
+                else { sel = null; showTag(null); paint(); }
             }
             function doMove(m) {
                 var s = apply(board, m, castling, epTarget);

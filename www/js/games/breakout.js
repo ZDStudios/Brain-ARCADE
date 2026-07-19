@@ -4,6 +4,7 @@
         id: "breakout", name: "Breakout", icon: "&#127951;",
         gradient: "linear-gradient(135deg,#7C3AED,#2563EB)",
         best: "high",
+        help: {"emoji":"&#127955;","goal":"Smash every brick with the bouncing ball.","steps":["Drag left and right to move the paddle.","Bounce the ball up to break the bricks.","Don't let the ball fall off the bottom.","Clear all the bricks to reach the next level!"]},
         mount: function (host, api) {
             var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.25, 420)), H = Math.round(W * 1.25);
             var score, lives, level, bricks, ball, paddle, raf, running, over;

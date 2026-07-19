@@ -4,6 +4,7 @@
         id: "whack", name: "Whack-a-Mole", icon: "&#128058;",
         gradient: "linear-gradient(135deg,#65A30D,#CA8A04)",
         best: "high",
+        help: {"emoji":"&#128058;","goal":"Bop as many moles as you can in 30 seconds.","steps":["Tap Start to begin.","Moles pop up out of the holes.","Tap a mole fast before it ducks back down!","Get as many as you can before time runs out."]},
         mount: function (host, api) {
             var score, timeLeft, running, holes = [], popTimer, tickTimer, activeIdx = -1;
 

@@ -4,6 +4,7 @@
         id: "simon", name: "Simon Says", icon: "&#128302;",
         gradient: "linear-gradient(135deg,#DB2777,#7C3AED)",
         best: "high", bestLabel: "Best", bestSuffix: " rounds",
+        help: {"emoji":"&#128302;","goal":"Repeat the growing colour pattern.","steps":["Watch the pads light up in order.","Tap the pads back in the same order.","Each round adds one more colour to remember.","One wrong tap ends it, how far can you get?"]},
         mount: function (host, api) {
             var seq = [], input = [], round = 0, playing = false, acceptingInput = false;
             var FREQ = [329.63, 415.30, 554.37, 659.25];

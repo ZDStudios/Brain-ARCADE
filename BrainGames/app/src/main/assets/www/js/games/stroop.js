@@ -4,6 +4,7 @@
         id: "stroop", name: "Color Clash", icon: "&#127752;",
         gradient: "linear-gradient(135deg,#DB2777,#F59E0B)",
         best: "high",
+        help: {"emoji":"&#127752;","goal":"Tap the COLOUR of the word, not what it says.","steps":["A colour word appears, painted in some colour.","Ignore the word, look at the colour of the letters.","Tap the button that matches that colour.","Score as many as you can in 30 seconds!"]},
         mount: function (host, api) {
             var COLORS = [ ["Red", "#EF4444"], ["Blue", "#3B82F6"], ["Green", "#22C55E"], ["Yellow", "#FBBF24"], ["Purple", "#A78BFA"] ];
             var score, timeLeft, running, tickTimer, inkIndex;

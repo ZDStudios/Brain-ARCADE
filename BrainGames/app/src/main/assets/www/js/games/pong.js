@@ -4,6 +4,7 @@
         id: "pong", name: "Pong", icon: "&#127955;",
         gradient: "linear-gradient(135deg,#334155,#0EA5E9)",
         best: "high", bestLabel: "Wins",
+        help: {"emoji":"&#127955;","goal":"Beat the computer to 7 points.","steps":["Drag left and right to move your paddle.","Bounce the ball back at the computer.","Score when the computer misses the ball.","First one to 7 points wins!"]},
         mount: function (host, api) {
             var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.35, 420)), H = Math.round(W * 1.35);
             var ball, pw, ph, player, ai, pScore, aiScore, raf, running, wins = api.load("wins", 0), roundOver;

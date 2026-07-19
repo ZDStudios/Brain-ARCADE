@@ -4,6 +4,7 @@
         id: "mines", name: "Minesweeper", icon: "&#128163;",
         gradient: "linear-gradient(135deg,#475569,#0F172A)",
         best: "low", bestLabel: "Best", bestSuffix: "s",
+        help: {"emoji":"&#128163;","goal":"Reveal every safe square without hitting a mine.","steps":["Tap a square to reveal it.","A number shows how many mines touch that square.","Turn on Flag mode (or long-press) to mark a mine.","Reveal all the safe squares to win!"]},
         mount: function (host, api) {
             var N = 9, MINES = 10;
             var grid, revealed, flags, dead, wonGame, started, time, timer, flagMode = false, left;

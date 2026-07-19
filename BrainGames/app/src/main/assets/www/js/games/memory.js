@@ -4,6 +4,7 @@
         id: "memory", name: "Memory Match", icon: "&#127183;",
         gradient: "linear-gradient(135deg,#0EA5E9,#6366F1)",
         best: "low", bestLabel: "Best", bestSuffix: " moves",
+        help: {"emoji":"&#127183;","goal":"Find all the matching pairs of cards.","steps":["Tap a card to flip it face up.","Tap a second card to look for its match.","Matching cards stay; others flip back over.","Match every pair in as few moves as you can!"]},
         mount: function (host, api) {
             var EMOJI = ["&#127822;","&#127817;","&#127826;","&#127818;","&#127827;","&#129373;","&#127820;","&#127814;"];
             var cards, first, lock, moves, matched, time, timer;

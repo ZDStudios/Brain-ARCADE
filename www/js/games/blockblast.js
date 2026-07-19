@@ -4,6 +4,7 @@
         id: "blockblast", name: "Block Blast", icon: "&#129000;",
         gradient: "linear-gradient(135deg,#F97316,#EF4444)",
         best: "high",
+        help: {"emoji":"&#129000;","goal":"Fill full rows or columns to blast them away.","steps":["Tap one of the 3 pieces at the bottom to pick it.","Tap the board to drop it on empty squares.","Fill a whole row or column to clear it and score.","Keep placing until no piece can fit anywhere."]},
         mount: function (host, api) {
             var N = 8;
             var COLORS = ["#22D3EE", "#A78BFA", "#F59E0B", "#34D399", "#F472B6", "#60A5FA", "#FBBF24"];

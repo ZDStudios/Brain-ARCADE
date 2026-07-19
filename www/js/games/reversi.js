@@ -4,6 +4,7 @@
         id: "reversi", name: "Reversi", icon: "&#9899;",
         gradient: "linear-gradient(135deg,#065F46,#111827)",
         best: "high", bestLabel: "Wins",
+        help: {"emoji":"&#9899;","goal":"Have the most discs when the board fills up.","steps":["You are the black discs.","Tap a glowing square to place a disc.","Trap white discs between two of yours to flip them black.","Whoever has more discs at the end wins."]},
         mount: function (host, api) {
             var N = 8, board, turn, over, wins = api.load("wins", 0), busy;
             var DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];

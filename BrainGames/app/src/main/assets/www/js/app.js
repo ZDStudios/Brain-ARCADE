@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.1.0";
+    var VERSION = "1.2.0";
     var GAMES = [];
     var current = null;      // { def, cleanup }
     var route = "home";      // 'home' | 'game' | 'settings'
@@ -153,6 +153,33 @@
     }
     function clearOverlays() { document.querySelectorAll(".overlay").forEach(function (o) { if (o.parentNode) o.parentNode.removeChild(o); }); }
 
+    /* ---------- How-to-Play instructions ---------- */
+    var helpFab = null;
+    function removeHelpFab() { if (helpFab && helpFab.parentNode) helpFab.parentNode.removeChild(helpFab); helpFab = null; }
+    function openHelp(def) {
+        var h = def.help || {};
+        var ov = el("div", { class: "overlay help-overlay" });
+        var panel = el("div", { class: "panel pop", style: "text-align:left;max-width:380px" });
+        panel.appendChild(el("div", { class: "big", style: "text-align:center", html: h.emoji || def.icon || "&#127918;" }));
+        panel.appendChild(el("h2", { style: "text-align:center", text: "How to play " + def.name }));
+        if (h.goal) panel.appendChild(el("p", { class: "help-goal", html: "&#127919; <b>Goal:</b> " + h.goal }));
+        var steps = el("ol", { class: "help-steps" });
+        (h.steps || []).forEach(function (s) { steps.appendChild(el("li", { html: s })); });
+        panel.appendChild(steps);
+        var row = el("div", { class: "btn-row", style: "margin-top:10px" });
+        row.appendChild(el("button", { class: "btn primary", text: "Let's play!", onclick: function () { if (ov.parentNode) ov.parentNode.removeChild(ov); } }));
+        panel.appendChild(row);
+        ov.appendChild(panel);
+        document.body.appendChild(ov);
+    }
+    function showHelpFab(def) {
+        removeHelpFab();
+        if (!def.help) return;
+        helpFab = el("button", { class: "help-fab", html: "?", onclick: function () { Sound.click(); haptic(8); openHelp(def); } });
+        document.body.appendChild(helpFab);
+        if (!load("helpseen_" + def.id, false)) { save("helpseen_" + def.id, true); setTimeout(function () { openHelp(def); }, 380); }
+    }
+
     /* ---------- api passed to games ---------- */
     function makeApi(def) {
         return {
@@ -273,6 +300,7 @@
         var cleanup = null;
         try { cleanup = def.mount(host, api); } catch (e) { toast("Game failed to load"); console.error(e); }
         current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null };
+        showHelpFab(def);
         animateView(); window.scrollTo(0, 0);
     }
 
@@ -367,7 +395,7 @@
     /* ---------- router ---------- */
     function teardown() {
         if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
-        current = null; clearOverlays();
+        current = null; clearOverlays(); removeHelpFab();
     }
     function go(where, arg) {
         teardown();

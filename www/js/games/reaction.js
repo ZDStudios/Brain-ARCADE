@@ -4,6 +4,7 @@
         id: "reaction", name: "Reaction Time", icon: "&#9889;",
         gradient: "linear-gradient(135deg,#F59E0B,#EF4444)",
         best: "low", bestLabel: "Best", bestSuffix: " ms",
+        help: {"emoji":"&#9889;","goal":"Tap the instant the box turns green.","steps":["Tap the box to get ready.","Wait while it is red, don't tap yet!","The moment it turns green, tap as fast as you can.","Lower time (in milliseconds) is better!"]},
         mount: function (host, api) {
             var state = "idle", startT = 0, waitTimer = null, results = [];
 

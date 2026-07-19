@@ -4,6 +4,7 @@
         id: "tetris", name: "Tetris", icon: "&#129513;",
         gradient: "linear-gradient(135deg,#6D28D9,#DB2777)",
         best: "high", bestLabel: "Best",
+        help: {"emoji":"&#129513;","goal":"Fill whole lines with blocks to clear them and score.","steps":["Blocks fall from the top. Move them with the &#8592; and &#8594; buttons.","Tap &#8635; to spin the block so it fits.","Fill a whole row with no gaps to clear it and score.","Tap &#9196; to drop fast. Don't let blocks stack to the top!"]},
         mount: function (host, api) {
             var COLS = 10, ROWS = 20;
             var COLORS = [null, "#22D3EE", "#3B82F6", "#F59E0B", "#FBBF24", "#34D399", "#A78BFA", "#F87171"];

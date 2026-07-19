@@ -4,6 +4,7 @@
         id: "c4", name: "Connect Four", icon: "&#128309;",
         gradient: "linear-gradient(135deg,#DC2626,#F59E0B)",
         best: "high", bestLabel: "Wins",
+        help: {"emoji":"&#128309;","goal":"Connect four of your discs in a line.","steps":["You are the red discs.","Tap a column to drop your disc to the bottom.","Line up four across, up, or diagonally.","Stop the computer's yellow discs from doing it first!"]},
         mount: function (host, api) {
             var COLS = 7, ROWS = 6, board, lock, wins = api.load("wins", 0);
 

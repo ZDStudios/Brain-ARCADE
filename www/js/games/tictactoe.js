@@ -4,6 +4,7 @@
         id: "ttt", name: "Tic-Tac-Toe", icon: "&#11093;",
         gradient: "linear-gradient(135deg,#2563EB,#06B6D4)",
         best: "high", bestLabel: "Wins",
+        help: {"emoji":"&#11093;","goal":"Get three of your marks in a row.","steps":["You are X, tap an empty square.","The computer plays O.","Line up three X's in a row, column or diagonal.","Block the computer's O's too!"]},
         mount: function (host, api) {
             var b, turn, lock, wins = api.load("wins", 0);
             var LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];

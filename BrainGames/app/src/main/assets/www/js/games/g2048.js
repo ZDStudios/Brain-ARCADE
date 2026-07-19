@@ -4,6 +4,7 @@
         id: "g2048", name: "2048", icon: "&#127922;",
         gradient: "linear-gradient(135deg,#F59E0B,#FBBF24)",
         best: "high",
+        help: {"emoji":"&#127922;","goal":"Join tiles to reach the 2048 tile.","steps":["Swipe up, down, left or right to slide every tile.","Two tiles with the same number join into a bigger one.","Every swipe adds a new tile to the board.","Keep joining numbers to build 2048!"]},
         mount: function (host, api) {
             var N = 4, grid = [], score = 0, won = false, dead = false;
             var TCOL = { 2:"#EEE4DA",4:"#EDE0C8",8:"#F2B179",16:"#F59563",32:"#F67C5F",64:"#F65E3B",128:"#EDCF72",256:"#EDCC61",512:"#EDC850",1024:"#EDC53F",2048:"#EDC22E" };

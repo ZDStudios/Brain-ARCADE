@@ -1,15 +1,20 @@
 /* Rush Hour — get the red car out of the jam */
 (function () {
     var LEVELS = [
-        [ {id:"X",x:1,y:2,len:2,dir:"h",t:1}, {id:"A",x:4,y:2,len:3,dir:"v"}, {id:"B",x:0,y:0,len:2,dir:"h"}, {id:"C",x:3,y:0,len:2,dir:"v"} ],
-        [ {id:"X",x:0,y:2,len:2,dir:"h",t:1}, {id:"A",x:2,y:0,len:3,dir:"v"}, {id:"B",x:3,y:1,len:2,dir:"v"}, {id:"C",x:2,y:4,len:2,dir:"h"}, {id:"D",x:5,y:2,len:3,dir:"v"} ],
-        [ {id:"X",x:1,y:2,len:2,dir:"h",t:1}, {id:"A",x:0,y:0,len:2,dir:"v"}, {id:"B",x:3,y:0,len:2,dir:"h"}, {id:"C",x:3,y:1,len:3,dir:"v"}, {id:"D",x:0,y:3,len:3,dir:"h"}, {id:"E",x:5,y:3,len:2,dir:"v"}, {id:"F",x:2,y:5,len:2,dir:"h"} ],
-        [ {id:"X",x:2,y:2,len:2,dir:"h",t:1}, {id:"A",x:0,y:0,len:3,dir:"h"}, {id:"B",x:4,y:0,len:2,dir:"v"}, {id:"C",x:5,y:0,len:3,dir:"v"}, {id:"D",x:0,y:1,len:2,dir:"v"}, {id:"E",x:1,y:3,len:2,dir:"v"}, {id:"F",x:3,y:4,len:3,dir:"h"} ]
+        [ {id:"X",x:1,y:2,len:2,dir:"h"}, {id:"A",x:4,y:2,len:3,dir:"v"}, {id:"B",x:0,y:0,len:2,dir:"h"}, {id:"C",x:3,y:0,len:2,dir:"v"} ],
+        [ {id:"X",x:0,y:2,len:2,dir:"h"}, {id:"A",x:2,y:0,len:3,dir:"v"}, {id:"B",x:3,y:1,len:2,dir:"v"}, {id:"C",x:2,y:4,len:2,dir:"h"}, {id:"D",x:5,y:2,len:3,dir:"v"} ],
+        [ {id:"X",x:1,y:2,len:2,dir:"h"}, {id:"A",x:0,y:0,len:2,dir:"v"}, {id:"B",x:3,y:0,len:2,dir:"h"}, {id:"C",x:3,y:1,len:3,dir:"v"}, {id:"D",x:0,y:3,len:3,dir:"h"}, {id:"E",x:5,y:3,len:2,dir:"v"}, {id:"F",x:2,y:5,len:2,dir:"h"} ],
+        [ {id:"X",x:2,y:2,len:2,dir:"h"}, {id:"A",x:0,y:0,len:3,dir:"h"}, {id:"B",x:4,y:0,len:2,dir:"v"}, {id:"C",x:5,y:0,len:3,dir:"v"}, {id:"D",x:0,y:1,len:2,dir:"v"}, {id:"E",x:1,y:3,len:2,dir:"v"}, {id:"F",x:3,y:4,len:3,dir:"h"} ]
     ];
     window.BrainGames.register({
         id: "rushhour", name: "Rush Hour", icon: "&#128663;",
         gradient: "linear-gradient(135deg,#B91C1C,#F59E0B)",
         best: "low", bestLabel: "Best", bestSuffix: " moves",
+        help: { emoji: "&#128663;", goal: "Drive the red car out through the exit on the right.", steps: [
+            "Cars only slide forwards and backwards, never sideways.",
+            "Tap a car to pick it — it lifts up and shows blue arrows.",
+            "Tap a glowing arrow to slide that car into an empty space.",
+            "Clear a path, then slide the red car off the right side to win!" ] },
         mount: function (host, api) {
             var N = 6, cars, sel, moves, level = api.load("level", 0) % LEVELS.length, solved;
             var COLORS = { X:"#EF4444", A:"#22D3EE", B:"#A78BFA", C:"#34D399", D:"#FBBF24", E:"#F472B6", F:"#60A5FA", G:"#FB923C" };
@@ -18,11 +23,11 @@
             host.appendChild(api.el("div", { class: "game-topline" }, [sLevel.box, sMoves.box, sBest.box]));
             var size = Math.min(api.space().board, 420);
             var cell = Math.floor(size / N);
-            var boardEl = api.el("div", { style: "position:relative;width:" + (cell * N) + "px;height:" + (cell * N) + "px;background:#0E1428;border-radius:10px" });
-            // exit marker
-            boardEl.appendChild(api.el("div", { style: "position:absolute;right:-6px;top:" + (2 * cell + cell * 0.2) + "px;width:12px;height:" + (cell * 0.6) + "px;background:#EF4444;border-radius:3px" }));
-            host.appendChild(api.el("div", { class: "board-wrap", style: "overflow:visible" }, boardEl));
-            host.appendChild(api.el("div", { class: "small-note", text: "Tap the red car, then tap a space to slide it. Free it out the right!" }));
+            var boardEl = api.el("div", { style: "position:relative;width:" + (cell * N) + "px;height:" + (cell * N) + "px;background:linear-gradient(135deg,#1b2440,#0E1428);border-radius:12px;box-shadow:inset 0 0 0 3px rgba(255,255,255,0.05)" });
+            boardEl.appendChild(api.el("div", { style: "position:absolute;right:-6px;top:" + (2 * cell) + "px;height:" + cell + "px;width:14px;display:grid;place-items:center;color:#EF4444;font-size:" + Math.floor(cell*0.5) + "px;font-weight:900", html: "&#8594;" }));
+            host.appendChild(api.el("div", { class: "board-wrap", style: "overflow:visible;padding:14px" }, boardEl));
+            var hint = api.el("div", { class: "small-note", html: "Tap a car, then tap a blue arrow to slide it. Free the red car! &#128663;" });
+            host.appendChild(hint);
             host.appendChild(api.el("div", { class: "btn-row" }, [
                 api.el("button", { class: "btn ghost", text: "Restart", onclick: function () { load(level); } }),
                 api.el("button", { class: "btn", text: "Next level", onclick: function () { level = (level + 1) % LEVELS.length; api.save("level", level); load(level); } })
@@ -35,57 +40,67 @@
                 cars.forEach(function (c) { for (var k = 0; k < c.len; k++) { var x = c.x + (c.dir === "h" ? k : 0), y = c.y + (c.dir === "v" ? k : 0); g[x + "," + y] = c.id; } });
                 return g;
             }
-            var carEls = {};
+
+            function buildCar(c) {
+                var horiz = c.dir === "h";
+                var w = (horiz ? c.len : 1) * cell - 8, h = (horiz ? 1 : c.len) * cell - 8;
+                var base = COLORS[c.id] || "#94A3B8";
+                var hero = c.id === "X";
+                var d = api.el("div", { class: "rh-car" + (sel === c.id ? " sel" : ""), style:
+                    "position:absolute;left:" + (c.x * cell + 4) + "px;top:" + (c.y * cell + 4) + "px;width:" + w + "px;height:" + h + "px;" +
+                    "border-radius:" + Math.floor(cell*0.28) + "px;cursor:pointer;transition:left .18s,top .18s,transform .1s;" +
+                    "background:linear-gradient(" + (horiz ? "180deg" : "90deg") + ",rgba(255,255,255,0.45)," + base + " 55%," + base + ");" +
+                    "box-shadow:inset 0 0 0 2px rgba(255,255,255,0.35), 0 5px 10px rgba(0,0,0,0.4);overflow:hidden" });
+                var roofPad = Math.floor(cell * 0.16);
+                d.appendChild(api.el("div", { style: "position:absolute;inset:" + roofPad + "px;border-radius:" + Math.floor(cell*0.18) + "px;background:rgba(255,255,255,0.28)" }));
+                var glass = api.el("div", { style: "position:absolute;background:rgba(11,16,32,0.55);border-radius:3px;" + (horiz
+                    ? "top:" + Math.floor(h*0.18) + "px;bottom:" + Math.floor(h*0.18) + "px;width:" + Math.floor(cell*0.34) + "px;" + (hero ? "right:" + Math.floor(cell*0.28) + "px" : "left:50%;transform:translateX(-50%)")
+                    : "left:" + Math.floor(w*0.18) + "px;right:" + Math.floor(w*0.18) + "px;height:" + Math.floor(cell*0.34) + "px;top:50%;transform:translateY(-50%)") });
+                d.appendChild(glass);
+                if (hero) {
+                    var eye = "position:absolute;width:" + Math.floor(cell*0.16) + "px;height:" + Math.floor(cell*0.16) + "px;border-radius:50%;background:#fff";
+                    var e1 = api.el("div", { style: eye + ";right:" + Math.floor(cell*0.10) + "px;top:" + Math.floor(h*0.26) + "px" });
+                    var e2 = api.el("div", { style: eye + ";right:" + Math.floor(cell*0.10) + "px;bottom:" + Math.floor(h*0.26) + "px" });
+                    e1.appendChild(api.el("div", { style: "position:absolute;right:1px;top:35%;width:38%;height:38%;border-radius:50%;background:#111" }));
+                    e2.appendChild(api.el("div", { style: "position:absolute;right:1px;top:35%;width:38%;height:38%;border-radius:50%;background:#111" }));
+                    d.appendChild(e1); d.appendChild(e2);
+                }
+                d.addEventListener("click", function (e) { e.stopPropagation(); if (solved) return; sel = (sel === c.id ? null : c.id); api.sound.click(); api.haptic(6); render(); });
+                return d;
+            }
+
             function render() {
-                boardEl.querySelectorAll(".car").forEach(function (e) { e.remove(); });
-                carEls = {};
-                cars.forEach(function (c) {
-                    var w = (c.dir === "h" ? c.len : 1) * cell - 6, h = (c.dir === "v" ? c.len : 1) * cell - 6;
-                    var d = api.el("div", { class: "car", style: "position:absolute;left:" + (c.x * cell + 3) + "px;top:" + (c.y * cell + 3) + "px;width:" + w + "px;height:" + h + "px;border-radius:9px;background:" + (COLORS[c.id] || "#94A3B8") + ";box-shadow:inset 0 -4px 0 rgba(0,0,0,0.25), inset 0 4px 0 rgba(255,255,255,0.25);transition:left .15s,top .15s;cursor:pointer;" + (sel === c.id ? "outline:3px solid #fff;" : "") + (c.id === "X" ? "background-image:radial-gradient(circle at 30% 30%,#FCA5A5,#EF4444);" : "") });
-                    d.addEventListener("click", function (e) { e.stopPropagation(); sel = (sel === c.id ? null : c.id); api.sound.click(); render(); });
-                    carEls[c.id] = d; boardEl.appendChild(d);
+                boardEl.querySelectorAll(".rh-car,.rh-arrow").forEach(function (e) { e.remove(); });
+                cars.forEach(function (c) { boardEl.appendChild(buildCar(c)); });
+                if (sel && !solved) addArrows(cars.filter(function (c) { return c.id === sel; })[0]);
+            }
+            function addArrows(car) {
+                var g = occ();
+                var opts = car.dir === "h"
+                    ? [ { dx:-1, cx: car.x-1, cy: car.y, gly:"&#8592;" }, { dx:1, cx: car.x+car.len, cy: car.y, gly:"&#8594;" } ]
+                    : [ { dy:-1, cx: car.x, cy: car.y-1, gly:"&#8593;" }, { dy:1, cx: car.x, cy: car.y+car.len, gly:"&#8595;" } ];
+                opts.forEach(function (o) {
+                    if (o.cx < 0 || o.cx >= N || o.cy < 0 || o.cy >= N || g[o.cx + "," + o.cy]) return;
+                    var b = api.el("button", { class: "rh-arrow", html: o.gly, style:
+                        "position:absolute;left:" + (o.cx*cell + cell*0.15) + "px;top:" + (o.cy*cell + cell*0.15) + "px;width:" + (cell*0.7) + "px;height:" + (cell*0.7) + "px" });
+                    b.addEventListener("click", function (e) { e.stopPropagation(); step(car, o.dx || 0, o.dy || 0); });
+                    boardEl.appendChild(b);
                 });
             }
-            function cellFromEvent(e) {
-                var rect = boardEl.getBoundingClientRect();
-                var px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-                var py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-                return { x: Math.floor(px / cell), y: Math.floor(py / cell) };
-            }
-            boardEl.addEventListener("click", function (e) {
-                if (!sel || solved) return;
-                var car = cars.filter(function (c) { return c.id === sel; })[0];
-                var p = cellFromEvent(e);
-                slide(car, p.x, p.y);
-            });
-            function slide(car, tx, ty) {
+            function step(car, dx, dy) {
+                if (solved) return;
                 var g = occ();
-                if (car.dir === "h") {
-                    if (ty < car.y || ty >= car.y + 1) return;
-                    var target = tx;
-                    if (target < car.x) { // move left
-                        var nx = car.x;
-                        while (nx - 1 >= 0 && !g[(nx - 1) + "," + car.y]) { nx--; if (nx <= target) break; }
-                        if (nx !== car.x) { car.x = nx; done(car); }
-                    } else if (target > car.x + car.len - 1) { // move right
-                        var nx2 = car.x;
-                        while (nx2 + car.len <= N - 1 && !g[(nx2 + car.len) + "," + car.y]) { nx2++; if (nx2 + car.len - 1 >= target) break; }
-                        if (nx2 !== car.x) { car.x = nx2; done(car); }
-                    }
-                } else {
-                    if (tx < car.x || tx >= car.x + 1) return;
-                    var t2 = ty;
-                    if (t2 < car.y) { var ny = car.y; while (ny - 1 >= 0 && !g[car.x + "," + (ny - 1)]) { ny--; if (ny <= t2) break; } if (ny !== car.y) { car.y = ny; done(car); } }
-                    else if (t2 > car.y + car.len - 1) { var ny2 = car.y; while (ny2 + car.len <= N - 1 && !g[car.x + "," + (ny2 + car.len)]) { ny2++; if (ny2 + car.len - 1 >= t2) break; } if (ny2 !== car.y) { car.y = ny2; done(car); } }
-                }
-            }
-            function done(car) {
-                moves++; sMoves.val.textContent = moves; api.sound.move(); api.haptic(8); render();
+                var checkX = car.dir === "h" ? (dx > 0 ? car.x + car.len : car.x - 1) : car.x;
+                var checkY = car.dir === "v" ? (dy > 0 ? car.y + car.len : car.y - 1) : car.y;
+                if (checkX < 0 || checkX >= N || checkY < 0 || checkY >= N || g[checkX + "," + checkY]) { api.sound.bad(); return; }
+                car.x += dx; car.y += dy;
+                moves++; sMoves.val.textContent = moves; api.sound.move(); api.haptic(8);
+                render();
                 if (car.id === "X" && car.x + car.len - 1 === N - 1) win();
             }
             function win() {
-                solved = true; var rec = api.setBest(moves); api.sound.win(); api.haptic(40);
-                api.overlay({ emoji: "&#128663;", title: "Escaped!", sub: "Level " + (level + 1) + " in <b>" + moves + "</b> moves" + (rec ? "<br>&#127942; New best!" : ""),
+                solved = true; sel = null; render(); var rec = api.setBest(moves); api.sound.win(); api.haptic(40);
+                api.overlay({ emoji: "&#128663;", title: "You freed it!", sub: "Level " + (level + 1) + " in <b>" + moves + "</b> moves" + (rec ? "<br>&#127942; New best!" : ""),
                     buttons: [ { label: "Home", onClick: api.exit }, { label: "Next level", primary: true, onClick: function () { level = (level + 1) % LEVELS.length; api.save("level", level); load(level); } } ] });
             }
             function load(lv) {
@@ -93,6 +108,7 @@
                 sel = null; moves = 0; solved = false; sMoves.val.textContent = "0"; sLevel.val.textContent = (lv + 1);
                 render();
             }
+            boardEl.addEventListener("click", function () { if (sel) { sel = null; render(); } });
             load(level);
             return function () {};
         }
