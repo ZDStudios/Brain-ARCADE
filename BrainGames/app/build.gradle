@@ -26,3 +26,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // FileProvider, for handing the downloaded APK to the system installer
+    implementation 'androidx.core:core:1.13.1'
+}

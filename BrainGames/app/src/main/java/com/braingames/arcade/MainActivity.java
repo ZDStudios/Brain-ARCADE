@@ -3,20 +3,26 @@ package com.braingames.arcade;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
+import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -32,6 +38,9 @@ public class MainActivity extends Activity {
     // Where over-the-air game updates come from (raw files on the main branch).
     private static final String UPDATE_BASE =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/www/";
+    // Where the app checks for a newer APK (self-update).
+    private static final String APK_INFO_URL =
+            "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
     private static final String BUNDLED_VERSION = "1.2.0";
 
     private WebView webView;
@@ -66,7 +75,7 @@ public class MainActivity extends Activity {
 
         // Check for OTA updates in the background (games always work offline regardless).
         if (isOnlineInternal()) {
-            new Thread(new Runnable() { public void run() { checkForUpdate(false); } }).start();
+            new Thread(new Runnable() { public void run() { checkForUpdate(false); checkForApkUpdate(); } }).start();
         }
     }
 
@@ -173,6 +182,61 @@ public class MainActivity extends Activity {
         dir.delete();
     }
 
+    /* ---------- APK self-update ---------- */
+    private long currentVersionCode() {
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? pi.getLongVersionCode() : (long) pi.versionCode;
+        } catch (Exception e) { return Long.MAX_VALUE; }
+    }
+
+    /** Look for a newer APK on GitHub and, if found, download it and offer to install. */
+    private void checkForApkUpdate() {
+        try {
+            String infoStr = httpGet(APK_INFO_URL);
+            if (infoStr == null) return;
+            JSONObject info = new JSONObject(infoStr);
+            long remote = info.optLong("versionCode", 0);
+            String apkUrl = info.optString("apkUrl", "");
+            if (remote <= currentVersionCode() || apkUrl.isEmpty()) return; // already up to date
+
+            byte[] apk = httpGetBytes(apkUrl);
+            if (apk == null || apk.length < 10000) return;
+            File dir = new File(getCacheDir(), "updates");
+            deleteDir(dir); dir.mkdirs();
+            final File out = new File(dir, "BrainArcade-update.apk");
+            FileOutputStream fos = new FileOutputStream(out);
+            fos.write(apk); fos.close();
+
+            final String vn = info.optString("versionName", "");
+            runOnUiThread(new Runnable() { public void run() { promptInstall(out, vn); } });
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void promptInstall(File apk, String versionName) {
+        try {
+            // Android O+ requires the user to allow installs from this app once.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getPackageManager().canRequestPackageInstalls()) {
+                if (webView != null) webView.evaluateJavascript(
+                        "window.BrainGames && window.BrainGames.toast && window.BrainGames.toast('Allow updates: turn on \\'Install unknown apps\\' for Brain Arcade');", null);
+                Intent allow = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                allow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(allow);
+                return;
+            }
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apk);
+            Intent install = new Intent(Intent.ACTION_VIEW);
+            install.setDataAndType(uri, "application/vnd.android.package-archive");
+            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (webView != null) webView.evaluateJavascript(
+                    "window.BrainGames && window.BrainGames.toast && window.BrainGames.toast('&#11015;&#65039; Update " + versionName + " ready \\u2014 tap Install');", null);
+            startActivity(install);
+        } catch (Exception ignored) {
+        }
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView != null) {
@@ -205,7 +269,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void checkUpdate() {
-            if (isOnlineInternal()) new Thread(new Runnable() { public void run() { checkForUpdate(true); } }).start();
+            if (isOnlineInternal()) new Thread(new Runnable() { public void run() { checkForUpdate(true); checkForApkUpdate(); } }).start();
         }
     }
 }
