@@ -6,7 +6,8 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.3.1";
+    var VERSION = "1.4.0";
+    var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
     var route = "home";      // 'home' | 'game' | 'settings'
@@ -289,7 +290,7 @@
         var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
         fetch(serverUrl() + "/api/heartbeat", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION }),
+            body: JSON.stringify({ deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel }),
             signal: ctrl
         }).then(function (r) { return r.json(); }).then(function (data) {
             setDot("online");
@@ -300,6 +301,11 @@
         policy.locked = !!data.locked;
         policy.allowedGames = Array.isArray(data.allowedGames) ? data.allowedGames.slice() : null;
         serverGoverns = policy.locked || policy.allowedGames != null;
+        // Remote "update the app" command from the dashboard.
+        if (data.appUpdate && data.appUpdate !== load("lastAppUpdate", null)) {
+            save("lastAppUpdate", data.appUpdate);
+            try { if (window.AndroidBridge && window.AndroidBridge.checkUpdate) { window.AndroidBridge.checkUpdate(); toast("Checking for an app update…"); } } catch (e) {}
+        }
         refreshPolicyUI();
     }
     function refreshPolicyUI() {
@@ -513,9 +519,37 @@
     /* ---------- update hook (called from native) ---------- */
     function onUpdate(version) { toast("&#10024; Updated to v" + version + " — enjoy the new games!"); Sound.good(); }
 
+    /* ---------- battery (top-left) ---------- */
+    var batteryEl = null;
+    function paintBattery() {
+        if (!batteryEl) return;
+        if (batteryLevel < 0) { batteryEl.style.display = "none"; return; }
+        batteryEl.style.display = "inline-flex";
+        var ico = batteryLevel > 80 ? "&#128267;" : batteryLevel <= 15 ? "&#129707;" : "&#128267;"; // battery / low-battery
+        var color = batteryLevel <= 15 ? "var(--bad)" : batteryLevel <= 35 ? "var(--warn)" : "var(--good)";
+        batteryEl.innerHTML = "<span class='bat-ico' style='color:" + color + "'>" + ico + "</span><span class='bat-pct'>" + batteryLevel + "%</span>";
+    }
+    function readBattery() {
+        try {
+            if (window.AndroidBridge && typeof window.AndroidBridge.getBattery === "function") {
+                var v = window.AndroidBridge.getBattery();
+                if (typeof v === "number" && v >= 0) { batteryLevel = v; paintBattery(); return; }
+            }
+        } catch (e) {}
+        if (navigator.getBattery) {
+            navigator.getBattery().then(function (b) { batteryLevel = Math.round(b.level * 100); paintBattery(); }).catch(function () {});
+        }
+    }
+
+    /* ---------- update hook (called from native) ---------- */
+
     /* ---------- boot ---------- */
     function boot() {
         setView();
+        var topbar = document.getElementById("topbar");
+        batteryEl = el("span", { id: "battery", class: "battery", style: "display:none" });
+        topbar.insertBefore(batteryEl, topbar.firstChild);
+        readBattery(); setInterval(readBattery, 30000);
         // status dot in brand
         var brand = document.getElementById("title");
         statusDot = el("span", { class: "status-dot off", style: "display:none" });

@@ -16,8 +16,9 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const ONLINE_MS = 40000;
 
-const devices = Object.create(null); // id -> { id, name, app, lastSeen }
+const devices = Object.create(null);  // id -> { id, name, app, lastSeen, battery }
 const policies = Object.create(null); // id -> { locked, allowedGames }
+const commands = Object.create(null); // id -> { appUpdateAt }
 
 function defaultPolicy() { return { locked: false, allowedGames: null }; }
 
@@ -58,9 +59,11 @@ const server = http.createServer(async function (req, res) {
     if (p === "/api/heartbeat" && req.method === "POST") {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
-        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now() };
+        var bat = (typeof b.battery === "number" && b.battery >= 0) ? b.battery : null;
+        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat };
         const pol = policies[b.deviceId] || defaultPolicy();
-        return send(res, 200, { locked: !!pol.locked, allowedGames: pol.allowedGames });
+        const cmd = commands[b.deviceId] || {};
+        return send(res, 200, { locked: !!pol.locked, allowedGames: pol.allowedGames, appUpdate: cmd.appUpdateAt || null });
     }
 
     if (p === "/api/devices" && req.method === "GET") {
@@ -68,12 +71,28 @@ const server = http.createServer(async function (req, res) {
         const list = Object.keys(devices).map(function (id) {
             const d = devices[id];
             return {
-                id: d.id, name: d.name, app: d.app,
+                id: d.id, name: d.name, app: d.app, battery: d.battery,
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
                 policy: policies[id] || defaultPolicy()
             };
         }).sort(function (a, b) { return (b.online - a.online) || a.name.localeCompare(b.name); });
         return send(res, 200, { devices: list, serverTime: now });
+    }
+
+    if (p === "/api/command" && req.method === "POST") {
+        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        if (b.action === "update") { commands[b.deviceId] = { appUpdateAt: Date.now() }; }
+        return send(res, 200, { ok: true });
+    }
+
+    if (p === "/api/device/remove" && req.method === "POST") {
+        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        delete devices[b.deviceId]; delete policies[b.deviceId]; delete commands[b.deviceId];
+        return send(res, 200, { ok: true });
     }
 
     if (p === "/api/policy" && req.method === "POST") {

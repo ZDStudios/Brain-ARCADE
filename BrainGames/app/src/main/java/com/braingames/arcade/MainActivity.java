@@ -11,6 +11,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
@@ -18,6 +19,8 @@ import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -41,7 +44,8 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.3.1";
+    private static final String BUNDLED_VERSION = "1.4.0";
+    private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private WebView webView;
     private SharedPreferences prefs;
@@ -66,8 +70,26 @@ public class MainActivity extends Activity {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // Needed so the WebView can load the updated bundle from internal storage
+        // (file:// access is off by default on Android 11+ / targetSdk 30+).
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+                // If the updated (internal-storage) bundle fails to load for any reason,
+                // throw it away and fall back to the built-in copy bundled in the APK.
+                if (req != null && req.isForMainFrame()) {
+                    String url = req.getUrl() != null ? req.getUrl().toString() : "";
+                    if (url.indexOf(getFilesDir().getAbsolutePath()) >= 0) {
+                        deleteDir(new File(getFilesDir(), "www"));
+                        prefs.edit().remove("installedVersion").apply();
+                        view.post(new Runnable() { public void run() { webView.loadUrl(ASSET_INDEX); } });
+                    }
+                }
+            }
+        });
         webView.setBackgroundColor(0xFF0B1020);
         webView.addJavascriptInterface(new NativeBridge(), "AndroidBridge");
 
@@ -81,9 +103,14 @@ public class MainActivity extends Activity {
 
     /** Load the updated bundle from internal storage if present, else the bundled assets. */
     private String currentIndexUrl() {
-        File idx = new File(new File(getFilesDir(), "www"), "index.html");
-        if (idx.exists()) return "file://" + idx.getAbsolutePath();
-        return "file:///android_asset/www/index.html";
+        File www = new File(getFilesDir(), "www");
+        File idx = new File(www, "index.html");
+        File appjs = new File(www, "js/app.js");
+        // Only use the updated bundle if it looks complete and readable; otherwise built-in.
+        if (idx.exists() && idx.canRead() && appjs.exists() && idx.length() > 0) {
+            return "file://" + idx.getAbsolutePath();
+        }
+        return ASSET_INDEX;
     }
 
     private boolean isOnlineInternal() {
@@ -266,6 +293,18 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean isOnline() { return isOnlineInternal(); }
+
+        @JavascriptInterface
+        public int getBattery() {
+            try {
+                BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
+                if (bm != null) {
+                    int pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+                    if (pct >= 0 && pct <= 100) return pct;
+                }
+            } catch (Exception ignored) {}
+            return -1;
+        }
 
         @JavascriptInterface
         public void checkUpdate() {

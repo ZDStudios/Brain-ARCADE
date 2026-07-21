@@ -1,5 +1,5 @@
 {
-  "version": "1.3.1",
+  "version": "1.4.0",
   "files": [
     "css/style.css",
     "index.html",
@@ -9,6 +9,7 @@
     "js/games/chess.js",
     "js/games/connect4.js",
     "js/games/flappy.js",
+    "js/games/fruitcatch.js",
     "js/games/g2048.js",
     "js/games/mathblitz.js",
     "js/games/memory.js",

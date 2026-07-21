@@ -122,7 +122,7 @@ function render(devices){
                 '<span class="name">'+esc(d.name)+'</span>'+
                 (st.locked?'<span class="lockbadge">LOCKED</span>':'')+
                 '<span class="spacer"></span>'+
-                '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+'</span>'+
+                '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+(d.battery!=null?' &middot; &#128267;'+d.battery+'%':'')+'</span>'+
             '</div>'+
             '<div class="id">'+esc(d.id)+'</div>'+
             '<div class="row">'+
@@ -130,6 +130,10 @@ function render(devices){
                 '<button class="btn" data-all="'+d.id+'">Allow all</button>'+
                 '<button class="btn" data-none="'+d.id+'">Allow none</button>'+
                 '<button class="btn primary" data-save="'+d.id+'">Save changes</button>'+
+            '</div>'+
+            '<div class="row">'+
+                '<button class="btn" data-update="'+d.id+'">&#11015;&#65039; Update app</button>'+
+                (!d.online?'<button class="btn danger" data-remove="'+d.id+'">&#128465; Remove device</button>':'')+
             '</div>'+
             '<div class="mini" style="margin-top:12px">Allowed games (unchecked = hidden on the tablet):</div>'+
             '<div class="games">'+checks+'</div>';
@@ -151,6 +155,13 @@ function wire(){
         poll(true);
     }; });
     document.querySelectorAll("[data-save]").forEach(function(b){ b.onclick=function(){ save(b.getAttribute("data-save")); }; });
+    document.querySelectorAll("[data-update]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-update");
+        fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"update"})})
+        .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent="Update queued ✓"; setTimeout(function(){b.innerHTML="&#11015;&#65039; Update app";},1500); }); }; });
+    document.querySelectorAll("[data-remove]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-remove");
+        if(!confirm("Remove this device from the dashboard? It will reappear if it checks in again.")) return;
+        fetch("/api/device/remove",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id})})
+        .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} delete draft[id]; poll(); }); }; });
 }
 function save(id){
     var st=draft[id];
