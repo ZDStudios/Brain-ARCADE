@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "whack", name: "Whack-a-Mole", icon: "&#128058;",
         gradient: "linear-gradient(135deg,#65A30D,#CA8A04)",
-        best: "high",
+        best: "high", difficulties: true,
         help: {"emoji":"&#128058;","goal":"Bop as many moles as you can in 30 seconds.","steps":["Tap Start to begin.","Moles pop up out of the holes.","Tap a mole fast before it ducks back down!","Get as many as you can before time runs out."]},
         mount: function (host, api) {
             var score, timeLeft, running, holes = [], popTimer, tickTimer, activeIdx = -1;
@@ -37,7 +37,8 @@
                 activeIdx = Math.floor(Math.random() * 9);
                 holes[activeIdx].innerHTML = "&#128058;";
                 holes[activeIdx].animate([{ transform: "translateY(40%)" }, { transform: "translateY(0)" }], { duration: 120 });
-                var up = Math.max(500, 1100 - (30 - timeLeft) * 22);
+                var mole = { easy: { base: 1450, floor: 750 }, medium: { base: 1100, floor: 500 }, hard: { base: 820, floor: 360 } }[api.difficulty] || { base: 1100, floor: 500 };
+                var up = Math.max(mole.floor, mole.base - (30 - timeLeft) * 22);
                 popTimer = setTimeout(function () { if (activeIdx > -1) holes[activeIdx].innerHTML = ""; pop(); }, up);
             }
             function whack(i) {

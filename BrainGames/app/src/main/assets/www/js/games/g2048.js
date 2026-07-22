@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "g2048", name: "2048", icon: "&#127922;",
         gradient: "linear-gradient(135deg,#F59E0B,#FBBF24)",
-        best: "high",
+        best: "high", resumable: true,
         help: {"emoji":"&#127922;","goal":"Join tiles to reach the 2048 tile.","steps":["Swipe up, down, left or right to slide every tile.","Two tiles with the same number join into a bigger one.","Every swipe adds a new tile to the board.","Keep joining numbers to build 2048!"]},
         mount: function (host, api) {
             var N = 4, grid = [], score = 0, won = false, dead = false;
@@ -53,7 +53,7 @@
                 for (var i = 0; i < dir; i++) grid = rotate(grid);
                 var moved = moveLeft();
                 for (var j = 0; j < (4 - dir) % 4; j++) grid = rotate(grid);
-                if (moved) { addTile(); api.sound.move(); api.haptic(8); draw(); update(); checkEnd(); }
+                if (moved) { addTile(); api.sound.move(); api.haptic(8); draw(); update(); checkEnd(); if (!dead) api.saveState({ grid: grid, score: score }); }
             }
             function movesLeft() {
                 if (empty().length) return true;
@@ -65,12 +65,13 @@
             }
             function checkEnd() {
                 if (won) { won = false; api.sound.win(); api.toast("You made 2048! Keep going &#128293;"); }
-                if (!movesLeft()) { dead = true; var rec = api.setBest(score); api.sound.lose();
+                if (!movesLeft()) { dead = true; api.clearState(); var rec = api.setBest(score); api.sound.lose();
                     api.overlay({ emoji: "&#128533;", title: "Game Over", sub: "Score <b>" + score + "</b>" + (rec ? "<br>&#127942; New best!" : ""),
                         buttons: [ { label: "Home", onClick: api.exit }, { label: "Retry", primary: true, onClick: reset } ] }); }
             }
             function update() { sScore.val.textContent = score; sBest.val.textContent = api.getBest() || 0; }
-            function reset() { grid = []; for (var r = 0; r < N; r++) grid.push(new Array(N).fill(0)); score = 0; dead = false; won = false; addTile(); addTile(); draw(); update(); }
+            function reset() { api.clearState(); grid = []; for (var r = 0; r < N; r++) grid.push(new Array(N).fill(0)); score = 0; dead = false; won = false; addTile(); addTile(); draw(); update(); }
+            function restore(rs) { grid = rs.grid.map(function (row) { return row.slice(); }); score = rs.score || 0; dead = false; won = false; draw(); update(); }
 
             // swipe
             var sx, sy;
@@ -83,7 +84,7 @@
             function key(e) { var m = { ArrowLeft:0, ArrowUp:1, ArrowRight:2, ArrowDown:3 }; if (e.key in m) { e.preventDefault(); move(m[e.key]); } }
             window.addEventListener("keydown", key);
 
-            reset();
+            if (api.resumeState && api.resumeState.grid) restore(api.resumeState); else reset();
             return function () { window.removeEventListener("keydown", key); };
         }
     });

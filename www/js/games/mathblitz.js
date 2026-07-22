@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "mathblitz", name: "Math Blitz", icon: "&#10133;",
         gradient: "linear-gradient(135deg,#2563EB,#7C3AED)",
-        best: "high",
+        best: "high", difficulties: true,
         help: {"emoji":"&#10133;","goal":"Answer as many sums as you can in 30 seconds.","steps":["Tap Start and a sum appears.","Tap the button with the correct answer.","Correct answers score; a streak scores bonus points.","Be quick, you only get 30 seconds!"]},
         mount: function (host, api) {
             var score, timeLeft, running, tickTimer, answer, streak;
@@ -22,11 +22,22 @@
             function ri(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
 
             function makeQ() {
-                var op = ["+", "-", "×"][ri(0, 2)], a, b, res;
-                var hard = Math.min(1, score / 40);
-                if (op === "+") { a = ri(2, 20 + hard * 40); b = ri(2, 20 + hard * 40); res = a + b; }
-                else if (op === "-") { a = ri(10, 30 + hard * 50); b = ri(2, a); res = a - b; }
-                else { a = ri(2, 6 + hard * 6); b = ri(2, 6 + hard * 6); res = a * b; }
+                var D = api.difficulty;
+                var ops = D === "easy" ? ["+", "-"] : ["+", "-", "×"];
+                var op = ops[ri(0, ops.length - 1)], a, b, res;
+                var lvl = Math.min(1, score / 40);
+                if (D === "easy") {
+                    if (op === "+") { a = ri(1, 10); b = ri(1, 10); res = a + b; }
+                    else { a = ri(2, 12); b = ri(1, a); res = a - b; }
+                } else if (D === "hard") {
+                    if (op === "+") { a = ri(10, 40 + lvl * 60); b = ri(10, 40 + lvl * 60); res = a + b; }
+                    else if (op === "-") { a = ri(20, 60 + lvl * 60); b = ri(2, a); res = a - b; }
+                    else { a = ri(3, 9 + lvl * 8); b = ri(3, 9 + lvl * 8); res = a * b; }
+                } else {
+                    if (op === "+") { a = ri(2, 20 + lvl * 40); b = ri(2, 20 + lvl * 40); res = a + b; }
+                    else if (op === "-") { a = ri(10, 30 + lvl * 50); b = ri(2, a); res = a - b; }
+                    else { a = ri(2, 6 + lvl * 6); b = ri(2, 6 + lvl * 6); res = a * b; }
+                }
                 answer = res;
                 q.textContent = a + " " + op + " " + b + " = ?";
                 var choices = [res];

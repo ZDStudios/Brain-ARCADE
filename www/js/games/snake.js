@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "snake", name: "Snake", icon: "&#128013;",
         gradient: "linear-gradient(135deg,#059669,#84CC16)",
-        best: "high",
+        best: "high", difficulties: true,
         help: {"emoji":"&#128013;","goal":"Eat food and grow as long as you can.","steps":["Swipe or use the arrow buttons to steer.","Eat the red food to grow longer and score.","Don't crash into the walls.","And don't bite your own tail!"]},
         mount: function (host, api) {
             var N = 17;
@@ -62,7 +62,7 @@
                 api.overlay({ emoji: "&#128013;", title: "Game Over", sub: "Score <b>" + score + "</b>" + (rec ? "<br>&#127942; New best!" : ""),
                     buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: reset } ] }); }
             function reset() {
-                snake = [[8,8],[7,8],[6,8]]; dir = [1,0]; nextDir = [1,0]; score = 0; over = false; stepMs = 160; acc = 0; last = 0;
+                snake = [[8,8],[7,8],[6,8]]; dir = [1,0]; nextDir = [1,0]; score = 0; over = false; stepMs = { easy: 210, medium: 150, hard: 100 }[api.difficulty] || 150; acc = 0; last = 0;
                 placeFood(); update(); draw();
             }
 

@@ -44,7 +44,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.4.0";
+    private static final String BUNDLED_VERSION = "1.5.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private WebView webView;
@@ -304,6 +304,13 @@ public class MainActivity extends Activity {
                 }
             } catch (Exception ignored) {}
             return -1;
+        }
+
+        @JavascriptInterface
+        public void openBrowser() {
+            runOnUiThread(new Runnable() { public void run() {
+                try { startActivity(new android.content.Intent(MainActivity.this, BrowserActivity.class)); } catch (Exception ignored) {}
+            } });
         }
 
         @JavascriptInterface

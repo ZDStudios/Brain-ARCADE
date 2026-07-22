@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "flappy", name: "Flappy Bird", icon: "&#128038;",
         gradient: "linear-gradient(135deg,#0EA5E9,#22C55E)",
-        best: "high",
+        best: "high", difficulties: true,
         help: {"emoji":"&#128038;","goal":"Fly through the gaps without crashing.","steps":["Tap the screen to make the bird flap up.","Stop tapping and it gently falls.","Fly through the gaps between the green pipes.","Each pipe you pass scores one point!"]},
         mount: function (host, api) {
             var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.3, 420)), H = Math.round(W * 1.3);
@@ -20,7 +20,7 @@
             function stat(k, v) { var val = api.el("div", { class: "v", text: v }); return { box: api.el("div", { class: "stat" }, [api.el("div", { class: "k", text: k }), val]), val: val }; }
 
             function reset() {
-                grav = H * 0.0011; jump = -H * 0.018; gap = H * 0.28; pipeW = W * 0.16; speed = W * 0.006; spawnX = W * 0.62;
+                grav = H * 0.0011; jump = -H * 0.018; gap = H * ({ easy: 0.36, medium: 0.28, hard: 0.22 }[api.difficulty] || 0.28); pipeW = W * 0.16; speed = W * ({ easy: 0.005, medium: 0.006, hard: 0.0072 }[api.difficulty] || 0.006); spawnX = W * 0.62;
                 bird = { x: W * 0.28, y: H / 2, v: 0, r: Math.max(9, W * 0.03) };
                 pipes = []; score = 0; over = false; started = false; sScore.val.textContent = "0";
                 addPipe(W); addPipe(W + spawnX);

@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "chess", name: "Chess", icon: "&#9822;",
         gradient: "linear-gradient(135deg,#1F2937,#4B5563)",
-        best: "high", bestLabel: "Wins",
+        best: "high", bestLabel: "Wins", difficulties: true,
         help: {"emoji":"&#9823;","goal":"Trap the computer's king (checkmate).","steps":["You play the white pieces at the bottom.","Tap a piece to see its name and where it can go (green dots).","Tap a green dot to move. A red ring means you can capture.","Trap the enemy king so it cannot escape to win!"]},
         mount: function (host, api) {
             var GLYPH = { P:"♙", N:"♘", B:"♗", R:"♖", Q:"♕", K:"♔",
@@ -179,8 +179,11 @@
                 if (!moves.length) return null;
                 // shuffle for variety
                 for (var i = moves.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = moves[i]; moves[i] = moves[j]; moves[j] = t; }
+                // Easy: often plays a random legal move. Otherwise search deeper.
+                if (api.difficulty === "easy" && Math.random() < 0.55) return moves[0];
+                var depth = api.difficulty === "hard" ? 3 : api.difficulty === "easy" ? 1 : 2;
                 var best = Infinity, bm = moves[0];
-                for (var k = 0; k < moves.length; k++) { var s = apply(board, moves[k], castling, epTarget); var v = search(s.b, 2, -Infinity, Infinity, true, s.cast, s.ep); if (v < best) { best = v; bm = moves[k]; } }
+                for (var k = 0; k < moves.length; k++) { var s = apply(board, moves[k], castling, epTarget); var v = search(s.b, depth, -Infinity, Infinity, true, s.cast, s.ep); if (v < best) { best = v; bm = moves[k]; } }
                 return bm;
             }
 

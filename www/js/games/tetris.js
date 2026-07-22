@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "tetris", name: "Tetris", icon: "&#129513;",
         gradient: "linear-gradient(135deg,#6D28D9,#DB2777)",
-        best: "high", bestLabel: "Best",
+        best: "high", bestLabel: "Best", difficulties: true,
         help: {"emoji":"&#129513;","goal":"Fill whole lines with blocks to clear them and score.","steps":["Blocks fall from the top. Move them with the &#8592; and &#8594; buttons.","Tap &#8635; to spin the block so it fits.","Fill a whole row with no gaps to clear it and score.","Tap &#9196; to drop fast. Don't let blocks stack to the top!"]},
         mount: function (host, api) {
             var COLS = 10, ROWS = 20;
@@ -19,7 +19,8 @@
                 [[7,7,0],[0,7,7]]                    // Z
             ];
             var grid = [], piece, score = 0, lines = 0, level = 1, over = false, paused = false;
-            var dropMs = 700, acc = 0, last = 0, raf = null;
+            var baseDrop = { easy: 950, medium: 700, hard: 480 }[api.difficulty] || 700;
+            var dropMs = baseDrop, acc = 0, last = 0, raf = null;
 
             for (var r = 0; r < ROWS; r++) { grid.push(new Array(COLS).fill(0)); }
 
@@ -82,7 +83,7 @@
                     lines += cleared;
                     score += [0, 40, 100, 300, 1200][cleared] * level;
                     level = 1 + Math.floor(lines / 10);
-                    dropMs = Math.max(120, 700 - (level - 1) * 55);
+                    dropMs = Math.max(120, baseDrop - (level - 1) * 55);
                     api.sound.good(); api.haptic(cleared >= 4 ? 40 : 18);
                     update();
                 }
@@ -144,7 +145,7 @@
             function togglePause() { if (over) return; paused = !paused; api.toast(paused ? "Paused" : "Resumed"); }
             function reset() {
                 for (var r = 0; r < ROWS; r++) grid[r].fill(0);
-                score = 0; lines = 0; level = 1; over = false; paused = false; dropMs = 700; acc = 0; last = 0;
+                score = 0; lines = 0; level = 1; over = false; paused = false; dropMs = baseDrop; acc = 0; last = 0;
                 update(); spawn(); draw();
             }
 

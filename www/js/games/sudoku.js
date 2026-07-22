@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "sudoku", name: "Sudoku", icon: "&#128290;",
         gradient: "linear-gradient(135deg,#0D9488,#0EA5E9)",
-        best: "low", bestLabel: "Best", bestSuffix: "s",
+        best: "low", bestLabel: "Best", bestSuffix: "s", difficulties: true,
         help: {"emoji":"&#128290;","goal":"Fill the grid so every row, column and box has 1-9.","steps":["Tap an empty square, then tap a number.","No number can repeat in a row, column or 3x3 box.","Red numbers show a clash, fix them.","Fill the whole grid correctly to win!"]},
         mount: function (host, api) {
             var solution, puzzle, given, sel = -1, time = 0, timer, doneGame;
@@ -107,7 +107,8 @@
             }
             function reset() {
                 clearInterval(timer); doneGame = false; time = 0; sTime.val.textContent = "0s"; sel = -1;
-                solution = makeSolution(); puzzle = dig(solution, 44); given = puzzle.map(function (v) { return v !== 0; });
+                var holes = { easy: 36, medium: 45, hard: 54 }[api.difficulty] || 45;
+                solution = makeSolution(); puzzle = dig(solution, holes); given = puzzle.map(function (v) { return v !== 0; });
                 build();
                 timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; }, 1000);
             }

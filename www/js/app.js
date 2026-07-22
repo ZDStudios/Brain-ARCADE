@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.4.0";
+    var VERSION = "1.5.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -251,10 +251,15 @@
     }
 
     /* ---------- api passed to games ---------- */
-    function makeApi(def) {
+    var liveState = null; // latest in-progress state for resume (set via api.saveState)
+    function makeApi(def, difficulty, resumeState) {
         return {
             el: el, sound: Sound, haptic: haptic, toast: toast, overlay: overlay,
             space: space, isTablet: isTablet,
+            difficulty: difficulty || "medium",
+            resumeState: resumeState || null,
+            saveState: function (s) { liveState = s; },
+            clearState: function () { liveState = null; try { LS.removeItem("ba_resume_" + def.id); } catch (e) {} },
             getBest: function () { return getBest(def.id); },
             setBest: function (v) { return setBest(def.id, v, def.best || "high"); },
             save: function (k, v) { save(def.id + "_" + k, v); },
@@ -373,19 +378,79 @@
         animateView(); window.scrollTo(0, 0);
     }
 
+    var RESUME_WINDOW = 30000; // 30s: offer to continue if you come back this quickly
+    var DIFFS = [
+        { id: "easy", label: "Easy", sub: "Ages ~6–8", emoji: "&#128522;" },
+        { id: "medium", label: "Medium", sub: "Ages ~9–12", emoji: "&#128513;" },
+        { id: "hard", label: "Hard", sub: "Ages ~12–16", emoji: "&#128526;" }
+    ];
+
     function openGame(def) {
         if (effLocked()) return;
         if (!allowed(def.id)) { toast("This game is turned off"); return; }
         route = "game"; routeArg = def;
-        clearOverlays();
+        clearOverlays(); removeHelpFab();
         document.getElementById("backBtn").hidden = false;
         view.innerHTML = "";
-        var host = el("div", { class: "game-host" });
+        var saved = def.resumable ? load("resume_" + def.id, null) : null;
+        if (saved && saved.ts && (Date.now() - saved.ts) < RESUME_WINDOW && saved.state) {
+            renderResumePrompt(def, saved);
+        } else if (def.difficulties) {
+            renderDifficulty(def, null);
+        } else {
+            launchGame(def, load("diff_" + def.id, "medium"), null);
+        }
+        window.scrollTo(0, 0);
+    }
+
+    function renderResumePrompt(def, saved) {
+        current = { def: def, cleanup: null, difficulty: saved.difficulty || "medium" };
+        var wrap = el("div", { class: "chooser fade-in" }, [
+            el("div", { class: "chooser-ico", html: def.icon || "&#127918;" }),
+            el("h2", { text: "Welcome back!" }),
+            el("p", { class: "small-note", text: "You have a " + def.name + " game in progress." }),
+            el("div", { class: "btn-row", style: "flex-direction:column;gap:10px;width:100%;max-width:300px" }, [
+                el("button", { class: "btn primary", style: "width:100%", html: "&#9654;&#65039; Continue game", onclick: function () {
+                    Sound.click(); launchGame(def, saved.difficulty || "medium", saved.state);
+                } }),
+                el("button", { class: "btn", style: "width:100%", text: "Start new game", onclick: function () {
+                    Sound.click(); try { LS.removeItem("ba_resume_" + def.id); } catch (e) {} liveState = null;
+                    view.innerHTML = ""; if (def.difficulties) renderDifficulty(def, null); else launchGame(def, load("diff_" + def.id, "medium"), null);
+                } })
+            ])
+        ]);
+        view.appendChild(wrap); animateView();
+    }
+
+    function renderDifficulty(def, _u) {
+        current = { def: def, cleanup: null, difficulty: null };
+        var last = load("diff_" + def.id, "medium");
+        var wrap = el("div", { class: "chooser fade-in" });
+        wrap.appendChild(el("div", { class: "chooser-ico", html: def.icon || "&#127918;" }));
+        wrap.appendChild(el("h2", { text: def.name }));
+        wrap.appendChild(el("p", { class: "small-note", text: "Choose a difficulty" }));
+        var list = el("div", { class: "diff-list" });
+        DIFFS.forEach(function (d) {
+            var card = el("button", { class: "diff-card" + (d.id === last ? " sel" : "") }, [
+                el("span", { class: "diff-emoji", html: d.emoji }),
+                el("span", { class: "diff-main" }, [ el("span", { class: "diff-label", text: d.label }), el("span", { class: "diff-sub", text: d.sub }) ])
+            ]);
+            card.addEventListener("click", function () { Sound.click(); haptic(10); save("diff_" + def.id, d.id); launchGame(def, d.id, null); });
+            list.appendChild(card);
+        });
+        wrap.appendChild(list);
+        view.appendChild(wrap); animateView();
+    }
+
+    function launchGame(def, difficulty, resumeState) {
+        view.innerHTML = "";
+        liveState = null;
+        var host = el("div", { class: "game-host fade-in" });
         view.appendChild(host);
-        var api = makeApi(def);
+        var api = makeApi(def, difficulty, resumeState);
         var cleanup = null;
         try { cleanup = def.mount(host, api); } catch (e) { toast("Game failed to load"); console.error(e); }
-        current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null };
+        current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null, difficulty: difficulty };
         showHelpFab(def);
         animateView(); window.scrollTo(0, 0);
     }
@@ -427,6 +492,14 @@
             el("div", { class: "s-ico", html: "&#128274;" }),
             el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Manage games (PIN)" }), el("div", { class: "s-sub", text: "Turn games on or off. Works offline." }) ]),
             el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(openGameManager); } })
+        ]));
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#127760;" }),
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Web browser (PIN)" }), el("div", { class: "s-sub", text: "Open an in-app browser" }) ]),
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(function () {
+                try { if (window.AndroidBridge && window.AndroidBridge.openBrowser) { window.AndroidBridge.openBrowser(); return; } } catch (e) {}
+                toast("The browser is only available in the installed app");
+            }); } })
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
@@ -485,6 +558,11 @@
 
     /* ---------- router ---------- */
     function teardown() {
+        // If leaving a resumable game mid-play, remember the state so we can offer Continue.
+        if (current && current.def && current.def.resumable && liveState != null) {
+            save("resume_" + current.def.id, { state: liveState, difficulty: current.difficulty || "medium", ts: Date.now() });
+        }
+        liveState = null;
         if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
         current = null; clearOverlays(); removeHelpFab();
     }

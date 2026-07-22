@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "ttt", name: "Tic-Tac-Toe", icon: "&#11093;",
         gradient: "linear-gradient(135deg,#2563EB,#06B6D4)",
-        best: "high", bestLabel: "Wins",
+        best: "high", bestLabel: "Wins", resumable: true,
         help: {"emoji":"&#11093;","goal":"Get three of your marks in a row.","steps":["You are X, tap an empty square.","The computer plays O.","Line up three X's in a row, column or diagonal.","Block the computer's O's too!"]},
         mount: function (host, api) {
             var b, turn, lock, wins = api.load("wins", 0);
@@ -39,7 +39,7 @@
                 b[i] = "X"; api.sound.click(); api.haptic(8); paint();
                 var w = winner(b); if (w) return end(w);
                 turn = "O"; lock = true;
-                setTimeout(function () { var m = best(b); if (m > -1) { b[m] = "O"; api.sound.tick(); paint(); } var w2 = winner(b); if (w2) return end(w2); turn = "X"; lock = false; }, 320);
+                setTimeout(function () { var m = best(b); if (m > -1) { b[m] = "O"; api.sound.tick(); paint(); } var w2 = winner(b); if (w2) return end(w2); turn = "X"; lock = false; api.saveState({ b: b.slice() }); }, 320);
             }
             function best(bb) {
                 var bestScore = -Infinity, move = -1;
@@ -61,7 +61,7 @@
                 }
             }
             function end(w) {
-                lock = true; paint(w.line);
+                lock = true; api.clearState(); paint(w.line);
                 if (w.who === "X") { wins++; api.save("wins", wins); sScore.val.textContent = wins; api.setBest(wins); sBest.val.textContent = api.getBest(); api.sound.win();
                     api.overlay({ emoji: "&#127881;", title: "You win!", sub: "Impressive!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else if (w.who === "O") { api.sound.lose();
@@ -69,8 +69,9 @@
                 else { api.sound.pop();
                     api.overlay({ emoji: "&#129309;", title: "Draw", sub: "Nicely played — a draw is the best you can force!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
             }
-            function reset() { b = ["","","","","","","","",""]; turn = "X"; lock = false; build(); paint(); }
-            reset();
+            function reset() { api.clearState(); b = ["","","","","","","","",""]; turn = "X"; lock = false; build(); paint(); }
+            function restore(rs) { b = rs.b.slice(); turn = "X"; lock = false; build(); paint(); }
+            if (api.resumeState && api.resumeState.b) restore(api.resumeState); else reset();
             return function () {};
         }
     });

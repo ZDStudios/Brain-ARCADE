@@ -13,13 +13,18 @@
         id: "wordle", name: "Wordle", icon: "&#128221;",
         gradient: "linear-gradient(135deg,#16A34A,#22D3EE)",
         best: "high", bestLabel: "Streak",
+        difficulties: true, resumable: true,
         help: { emoji: "&#128221;", goal: "Guess the secret 5-letter word in 6 tries.", steps: [
             "Type any real 5-letter word and press Enter.",
             "Green means the letter is right and in the right spot.",
             "Yellow means the letter is in the word, but a different spot.",
             "Grey means the letter is not in the word. Use the clues to win!" ] },
         mount: function (host, api) {
-            var target, row, col, letters, done, busy, streak = api.load("streak", 0);
+            var target, row, col, letters, done, busy, guesses, streak = api.load("streak", 0);
+            // Difficulty: easier = more common words (answers are frequency-ordered).
+            var pool = api.difficulty === "easy" ? ANSWERS.slice(0, 400)
+                     : api.difficulty === "hard" ? ANSWERS
+                     : ANSWERS.slice(0, 1200);
 
             var sStreak = stat("Streak", streak + ""), sBest = stat("Best", (api.getBest() || 0) + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sStreak.box, sBest.box]));
@@ -83,8 +88,9 @@
                 api.sound.move();
                 function finishRow() {
                     busy = false;
+                    guesses.push(guess);
                     if (guess === target) {
-                        done = true; streak++; api.save("streak", streak); var rec = api.setBest(streak); sStreak.val.textContent = streak; sBest.val.textContent = api.getBest();
+                        done = true; api.clearState(); streak++; api.save("streak", streak); var rec = api.setBest(streak); sStreak.val.textContent = streak; sBest.val.textContent = api.getBest();
                         api.sound.win(); api.haptic(30);
                         for (var j = 0; j < 5; j++) (function (j) { setTimeout(function () { tiles[row * 5 + j].animate([{transform:"translateY(0)"},{transform:"translateY(-14px)"},{transform:"translateY(0)"}], { duration: 400 }); }, j * 90); })(j);
                         setTimeout(function () {
@@ -93,7 +99,8 @@
                         }, 700);
                     } else {
                         row++; col = 0;
-                        if (row >= 6) { done = true; streak = 0; api.save("streak", 0); sStreak.val.textContent = 0; api.sound.lose();
+                        api.saveState({ target: target, guesses: guesses.slice(), streak: streak });
+                        if (row >= 6) { done = true; api.clearState(); streak = 0; api.save("streak", 0); sStreak.val.textContent = 0; api.sound.lose();
                             api.overlay({ emoji: "&#128533;", title: "Out of guesses", sub: "The word was <b>" + target + "</b>",
                                 buttons: [ { label: "Home", onClick: api.exit }, { label: "Try again", primary: true, onClick: reset } ] }); }
                     }
@@ -112,13 +119,31 @@
             }
             function shake() { boardEl.animate([{ transform: "translateX(0)" }, { transform: "translateX(-6px)" }, { transform: "translateX(6px)" }, { transform: "translateX(0)" }], { duration: 200 }); }
             function reset() {
-                target = ANSWERS[Math.floor(Math.random() * ANSWERS.length)];
+                api.clearState(); guesses = [];
+                target = pool[Math.floor(Math.random() * pool.length)];
                 row = 0; col = 0; done = false; busy = false; letters = []; for (var r = 0; r < 6; r++) letters.push(["","","","",""]);
                 buildBoard(); buildKb();
             }
+            function restore(rs) {
+                guesses = (rs.guesses || []).slice(); target = rs.target;
+                if (typeof rs.streak === "number") { streak = rs.streak; sStreak.val.textContent = streak; }
+                row = 0; col = 0; done = false; busy = false; letters = []; for (var r = 0; r < 6; r++) letters.push(["","","","",""]);
+                buildBoard(); buildKb();
+                guesses.forEach(function (g) {
+                    var res = score(g, target);
+                    for (var i = 0; i < 5; i++) {
+                        var t = tiles[row * 5 + i]; t.textContent = g[i];
+                        var c = res[i] === 2 ? "#16A34A" : res[i] === 1 ? "#CA8A04" : "#3A3F55";
+                        t.style.background = c; t.style.borderColor = c;
+                        var kb = keyEls[g[i]]; if (kb) { var pr = kb._state || 0; if (res[i] >= pr) { kb._state = res[i]; kb.style.background = c; kb.style.color = "#fff"; kb.style.borderColor = "transparent"; } }
+                    }
+                    row++;
+                });
+                col = 0;
+            }
             function key(e) { var k = e.key.toUpperCase(); if (k === "ENTER") press("ENTER"); else if (k === "BACKSPACE") press("DEL"); else if (/^[A-Z]$/.test(k)) press(k); }
             window.addEventListener("keydown", key);
-            reset();
+            if (api.resumeState && api.resumeState.target) restore(api.resumeState); else reset();
             return function () { window.removeEventListener("keydown", key); };
         }
     });

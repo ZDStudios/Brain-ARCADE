@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "reversi", name: "Reversi", icon: "&#9899;",
         gradient: "linear-gradient(135deg,#065F46,#111827)",
-        best: "high", bestLabel: "Wins",
+        best: "high", bestLabel: "Wins", difficulties: true,
         help: {"emoji":"&#9899;","goal":"Have the most discs when the board fills up.","steps":["You are the black discs.","Tap a glowing square to place a disc.","Trap white discs between two of yours to flip them black.","Whoever has more discs at the end wins."]},
         mount: function (host, api) {
             var N = 8, board, turn, over, wins = api.load("wins", 0), busy;
@@ -76,10 +76,13 @@
             function afterPaint() { var l = legal(board, 1); paint(l); if (turn === 1 && !l.length) { turn = -1; next(); } }
             function ai() {
                 var moves = legal(board, -1); if (!moves.length) return null;
+                // Easy: play a random legal move most of the time.
+                if (api.difficulty === "easy" && Math.random() < 0.6) return moves[Math.floor(Math.random() * moves.length)];
+                var depth = api.difficulty === "hard" ? 4 : api.difficulty === "easy" ? 1 : 2;
                 var best = -Infinity, bm = moves[0];
                 moves.forEach(function (m) {
                     var b2 = board.slice(); place(b2, m, -1);
-                    var score = -negamax(b2, 1, 1, -Infinity, Infinity);
+                    var score = -negamax(b2, depth, 1, -Infinity, Infinity);
                     if (score > best) { best = score; bm = m; }
                 });
                 return bm;

@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "c4", name: "Connect Four", icon: "&#128309;",
         gradient: "linear-gradient(135deg,#DC2626,#F59E0B)",
-        best: "high", bestLabel: "Wins",
+        best: "high", bestLabel: "Wins", difficulties: true,
         help: {"emoji":"&#128309;","goal":"Connect four of your discs in a line.","steps":["You are the red discs.","Tap a column to drop your disc to the bottom.","Line up four across, up, or diagonally.","Stop the computer's yellow discs from doing it first!"]},
         mount: function (host, api) {
             var COLS = 7, ROWS = 6, board, lock, wins = api.load("wins", 0);
@@ -63,9 +63,16 @@
                 return null;
             }
             function aiMove() {
+                var valid = []; for (var vc = 0; vc < COLS; vc++) if (dropRow(board, vc) >= 0) valid.push(vc);
+                // Easy: mostly random; still takes an immediate win.
+                if (api.difficulty === "easy") {
+                    for (var w = 0; w < COLS; w++) { var wr = dropRow(board, w); if (wr < 0) continue; board[wr * COLS + w] = 2; if (winLine(board, 2)) { board[wr * COLS + w] = 0; return w; } board[wr * COLS + w] = 0; }
+                    if (Math.random() < 0.7) return valid[Math.floor(Math.random() * valid.length)];
+                }
                 // win now?
                 for (var c = 0; c < COLS; c++) { var r = dropRow(board, c); if (r < 0) continue; board[r * COLS + c] = 2; if (winLine(board, 2)) { board[r * COLS + c] = 0; return c; } board[r * COLS + c] = 0; }
-                // block?
+                // block? (skip blocking sometimes on medium for fairness; always on hard)
+                if (api.difficulty === "hard" || Math.random() < 0.85)
                 for (var c2 = 0; c2 < COLS; c2++) { var r2 = dropRow(board, c2); if (r2 < 0) continue; board[r2 * COLS + c2] = 1; if (winLine(board, 1)) { board[r2 * COLS + c2] = 0; return c2; } board[r2 * COLS + c2] = 0; }
                 // avoid giving opponent a win, prefer center
                 var order = [3,2,4,1,5,0,6], safe = [];

@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "fruitcatch", name: "Fruit Catch", icon: "&#127826;",
         gradient: "linear-gradient(135deg,#F97316,#EF4444)",
-        best: "high",
+        best: "high", difficulties: true,
         help: { emoji: "&#127826;", goal: "Catch the falling fruit in your basket.", steps: [
             "Drag left and right to move the basket.",
             "Catch fruit to score points.",
@@ -25,13 +25,13 @@
             function stat(k, v) { var val = api.el("div", { class: "v", text: v }); return { box: api.el("div", { class: "stat" }, [api.el("div", { class: "k", text: k }), val]), val: val }; }
 
             function reset() {
-                score = 0; lives = 3; items = []; over = false; spawnAcc = 0; last = 0; speed = H * 0.004;
+                score = 0; lives = 3; items = []; over = false; spawnAcc = 0; last = 0; speed = H * ({ easy: 0.003, medium: 0.004, hard: 0.0055 }[api.difficulty] || 0.004);
                 basket = { x: W / 2, w: W * 0.22, y: H - W * 0.12 };
                 sScore.val.textContent = "0"; sLives.val.textContent = "3"; sBest.val.textContent = api.getBest() || 0;
                 if (!raf) raf = requestAnimationFrame(loop);
             }
             function spawn() {
-                var bomb = Math.random() < 0.16;
+                var bomb = Math.random() < ({ easy: 0.10, medium: 0.16, hard: 0.24 }[api.difficulty] || 0.16);
                 items.push({ x: W * (0.1 + Math.random() * 0.8), y: -20, r: W * 0.05, bomb: bomb, e: bomb ? "💣" : FRUITS[Math.floor(Math.random() * FRUITS.length)], vy: speed * (0.8 + Math.random() * 0.6) });
             }
             function step(dt) {

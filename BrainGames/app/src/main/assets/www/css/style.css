@@ -386,6 +386,19 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .pin-key:active { transform: scale(0.92); }
 .pin-key.alt { background: var(--card); color: var(--accent-2); }
 
+/* ===== Difficulty / resume chooser ===== */
+.chooser { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 12px; text-align: center; }
+.chooser-ico { font-size: 54px; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.4)); }
+.chooser h2 { margin: 6px 0 0; font-size: 24px; }
+.diff-list { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 360px; margin-top: 14px; }
+.diff-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 16px; border: 2px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; text-align: left; transition: transform 0.1s, border-color 0.15s; box-shadow: var(--shadow); }
+.diff-card.sel { border-color: var(--accent); }
+.diff-card:active { transform: scale(0.97); }
+.diff-emoji { font-size: 32px; flex: 0 0 auto; }
+.diff-main { display: flex; flex-direction: column; }
+.diff-label { font-weight: 800; font-size: 19px; }
+.diff-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
 /* ===== Battery indicator (top-left) ===== */
 .battery { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13px; padding: 7px 9px; border-radius: 11px; background: var(--card); border: 1px solid var(--line); flex: 0 0 auto; }
 .battery .bat-ico { font-size: 15px; line-height: 1; }
