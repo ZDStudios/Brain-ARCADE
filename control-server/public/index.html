@@ -208,6 +208,12 @@ var remote = null; // { id, frameTimer, modal }
 function openRemote(id){
     var d=lastDevices.filter(function(x){return x.id===id;})[0];
     var name=d?d.name:"Tablet";
+    // Screen capture is a native feature of the installed app; the WiFi game
+    // update can't add it. If the tablet reports it can't capture, say so.
+    if(d && d.canStream===false){
+        alert("This tablet can’t share its screen yet.\n\nScreen view + remote control need the latest Brain Arcade APK installed ON THE TABLET (v1.6.0 or newer). The over-the-WiFi game update is not enough — it can’t add screen capture.\n\nOn the tablet: Settings → Check for updates, then tap Install when the update is offered.");
+        return;
+    }
     // Ask the tablet to start streaming (it only streams while this is on).
     fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"stream",on:true})})
     .then(function(r){ if(r.status===401){alert("Wrong admin token");return;}
@@ -218,7 +224,7 @@ function openRemote(id){
                 '<span class="spacer"></span>'+
                 '<button class="btn primary" id="rc-close">Close</button>'+
             '</div>'+
-            '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">(streaming starts on its next check-in)</span></div></div>'+
+            '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">The tablet starts sharing on its next check-in (up to ~15s). If nothing appears, install the latest APK on the tablet.</span></div></div>'+
             '<div class="mhint">Tap the screen to tap on the tablet. This controls the Brain Arcade app only. Streaming stops when you close this.</div>';
         document.body.appendChild(m);
         remote={ id:id, modal:m, frameTimer:null };

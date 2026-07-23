@@ -65,7 +65,7 @@ const server = http.createServer(async function (req, res) {
         var bat = (typeof b.battery === "number" && b.battery >= 0) ? b.battery : null;
         var prev = devices[b.deviceId] || {};
         var games = Array.isArray(b.games) && b.games.length ? b.games : (prev.games || null);
-        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat, games: games };
+        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat, games: games, canStream: !!b.canStream };
         const pol = policies[b.deviceId] || defaultPolicy();
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
 
@@ -101,6 +101,7 @@ const server = http.createServer(async function (req, res) {
             return {
                 id: d.id, name: d.name, app: d.app, battery: d.battery,
                 games: d.games || null,
+                canStream: !!d.canStream,
                 streaming: !!cmd.stream,
                 hasFrame: !!(fr && (now - fr.ts) < 15000),
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,

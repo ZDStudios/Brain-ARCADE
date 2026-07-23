@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.6.0";
+    var VERSION = "1.6.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -323,7 +323,8 @@
         var body = {
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
             games: GAMES.map(function (g) { return { id: g.id, name: g.name }; }),
-            scores: currentScores()
+            scores: currentScores(),
+            canStream: canCapture()  // true only in the installed app (needs native screen capture)
         };
         if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
         fetch(serverUrl() + "/api/heartbeat", {

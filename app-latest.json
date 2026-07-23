@@ -1,6 +1,6 @@
 {
   "versionCode": 7,
-  "versionName": "1.6.0",
+  "versionName": "1.6.1",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Dashboard lists every game from the tablet (incl. Fruit Catch), send pop-up messages, on-demand screen view + remote tap control, and high scores now survive a reinstall."
+  "notes": "Dashboard now tells you when a tablet needs the new APK for screen sharing; plus the v1.6 features: full game list, pop-up messages, on-demand screen view + tap control, and reinstall-proof high scores."
 }
