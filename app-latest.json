@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.5.1",
+  "versionCode": 7,
+  "versionName": "1.6.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Fix home screen flashing every 15s on the heartbeat."
+  "notes": "Dashboard lists every game from the tablet (incl. Fruit Catch), send pop-up messages, on-demand screen view + remote tap control, and high scores now survive a reinstall."
 }

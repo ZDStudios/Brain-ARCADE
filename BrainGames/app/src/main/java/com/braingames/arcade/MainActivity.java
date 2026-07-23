@@ -6,6 +6,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -44,7 +46,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.5.1";
+    private static final String BUNDLED_VERSION = "1.6.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private WebView webView;
@@ -316,6 +318,47 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void checkUpdate() {
             if (isOnlineInternal()) new Thread(new Runnable() { public void run() { checkForUpdate(true); checkForApkUpdate(); } }).start();
+        }
+
+        /** A stable per-device id so scores can be restored after a reinstall. */
+        @JavascriptInterface
+        public String getDeviceId() {
+            try {
+                String id = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+                return id != null ? id : "";
+            } catch (Exception e) { return ""; }
+        }
+
+        /** Capture the current WebView as a small base64 JPEG (for on-demand remote view). */
+        @JavascriptInterface
+        public String captureScreen() {
+            final String[] result = { "" };
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    int w = webView.getWidth(), h = webView.getHeight();
+                    if (w <= 0 || h <= 0) { latch.countDown(); return; }
+                    Bitmap full = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565);
+                    Canvas c = new Canvas(full);
+                    webView.draw(c);
+                    // Scale down so frames stay small over the network.
+                    int maxW = 480;
+                    Bitmap small = full;
+                    if (w > maxW) {
+                        int nh = Math.round(h * (maxW / (float) w));
+                        small = Bitmap.createScaledBitmap(full, maxW, nh, true);
+                    }
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                    small.compress(Bitmap.CompressFormat.JPEG, 45, bos);
+                    result[0] = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
+                    if (small != full) small.recycle();
+                    full.recycle();
+                } catch (Throwable t) {
+                    result[0] = "";
+                } finally { latch.countDown(); }
+            } });
+            try { latch.await(2, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) {}
+            return result[0];
         }
     }
 }

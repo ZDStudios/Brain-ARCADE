@@ -51,6 +51,17 @@
     .mini { font-size:12px; color:var(--muted); }
     a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
 
+    /* ===== Remote-control modal ===== */
+    .modal { position:fixed; inset:0; background:rgba(4,7,18,.94); z-index:50; display:flex; flex-direction:column; align-items:center; padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)); }
+    .modal .mhead { display:flex; align-items:center; gap:10px; width:100%; max-width:520px; margin-bottom:12px; }
+    .modal .mhead .name { font-size:16px; }
+    .modal .screen-wrap { position:relative; flex:1; width:100%; max-width:520px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .modal img.screen { max-width:100%; max-height:100%; border-radius:18px; border:2px solid var(--line); background:#000; cursor:crosshair; touch-action:none; }
+    .modal .waiting { color:var(--muted); text-align:center; }
+    .tapdot { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%; border:3px solid var(--accent2); pointer-events:none; animation:tapfade .5s ease-out forwards; }
+    @keyframes tapfade { from{transform:scale(.4);opacity:1;} to{transform:scale(1.4);opacity:0;} }
+    .modal .mhint { color:var(--muted); font-size:12px; margin-top:10px; text-align:center; max-width:520px; }
+
     /* ===== Phone layout ===== */
     @media (max-width:600px) {
       header h1 { font-size:16px; }
@@ -81,14 +92,20 @@
     <div id="list"><div class="empty">Waiting for devices to check in…</div></div>
 </div>
 <script>
+// Fallback list, used only until a tablet reports its own game list.
 var GAMES = [
     ["tetris","Tetris"],["blockblast","Block Blast"],["g2048","2048"],["chess","Chess"],
     ["solitaire","Solitaire"],["rushhour","Rush Hour"],["reversi","Reversi"],["mathblitz","Math Blitz"],
     ["stroop","Color Clash"],["wordle","Wordle"],["snake","Snake"],["memory","Memory Match"],
     ["mines","Minesweeper"],["sudoku","Sudoku"],["simon","Simon Says"],["ttt","Tic-Tac-Toe"],
     ["c4","Connect Four"],["breakout","Breakout"],["whack","Whack-a-Mole"],["puzzle15","15 Puzzle"],
-    ["flappy","Flappy Bird"],["pong","Pong"],["reaction","Reaction Time"]
+    ["flappy","Flappy Bird"],["pong","Pong"],["reaction","Reaction Time"],["fruitcatch","Fruit Catch"]
 ];
+// Each tablet reports the games it actually has; use that when present.
+function gamesFor(d){
+    if (d && d.games && d.games.length) return d.games.map(function(g){ return [g.id, g.name]; });
+    return GAMES;
+}
 var draft = {}; // deviceId -> {locked, allowedGames}
 
 var tokenEl = document.getElementById("token");
@@ -112,9 +129,10 @@ function render(devices){
         var st=draft[d.id];
         var card=document.createElement("div"); card.className="device";
         var allowed = st.allowedGames; // null = all
-        var checks = GAMES.map(function(g){
+        var gameList = gamesFor(d);
+        var checks = gameList.map(function(g){
             var on = !allowed || allowed.indexOf(g[0])>-1;
-            return '<label class="'+(on?'on':'')+'"><input type="checkbox" data-dev="'+d.id+'" data-game="'+g[0]+'" '+(on?'checked':'')+'/> '+g[1]+'</label>';
+            return '<label class="'+(on?'on':'')+'"><input type="checkbox" data-dev="'+d.id+'" data-game="'+g[0]+'" '+(on?'checked':'')+'/> '+esc(g[1])+'</label>';
         }).join("");
         card.innerHTML =
             '<div class="top">'+
@@ -122,7 +140,7 @@ function render(devices){
                 '<span class="name">'+esc(d.name)+'</span>'+
                 (st.locked?'<span class="lockbadge">LOCKED</span>':'')+
                 '<span class="spacer"></span>'+
-                '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+(d.battery!=null?' &middot; &#128267;'+d.battery+'%':'')+'</span>'+
+                '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+(d.battery!=null?' &middot; &#128267;'+d.battery+'%':'')+' &middot; '+gameList.length+' games</span>'+
             '</div>'+
             '<div class="id">'+esc(d.id)+'</div>'+
             '<div class="row">'+
@@ -132,6 +150,8 @@ function render(devices){
                 '<button class="btn primary" data-save="'+d.id+'">Save changes</button>'+
             '</div>'+
             '<div class="row">'+
+                '<button class="btn" data-msg="'+d.id+'">&#128172; Send message</button>'+
+                '<button class="btn" data-remote="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128241; Remote control</button>'+
                 '<button class="btn" data-update="'+d.id+'">&#11015;&#65039; Update app</button>'+
                 (!d.online?'<button class="btn danger" data-remove="'+d.id+'">&#128465; Remove device</button>':'')+
             '</div>'+
@@ -149,12 +169,20 @@ function wire(){
     document.querySelectorAll("[data-none]").forEach(function(b){ b.onclick=function(){ draft[b.getAttribute("data-none")].allowedGames=[]; poll(true); }; });
     document.querySelectorAll('.games input').forEach(function(cb){ cb.onchange=function(){
         var id=cb.getAttribute("data-dev"), g=cb.getAttribute("data-game");
-        var st=draft[id]; if(!st.allowedGames) st.allowedGames=GAMES.map(function(x){return x[0];});
+        var st=draft[id];
+        var d=lastDevices.filter(function(x){return x.id===id;})[0];
+        if(!st.allowedGames) st.allowedGames=gamesFor(d).map(function(x){return x[0];});
         var i=st.allowedGames.indexOf(g);
         if(cb.checked){ if(i<0) st.allowedGames.push(g); } else { if(i>-1) st.allowedGames.splice(i,1); }
         poll(true);
     }; });
     document.querySelectorAll("[data-save]").forEach(function(b){ b.onclick=function(){ save(b.getAttribute("data-save")); }; });
+    document.querySelectorAll("[data-msg]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-msg");
+        var text=prompt("Message to show on the tablet:");
+        if(text==null||!text.trim()) return;
+        fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"popup",text:text.trim()})})
+        .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent="Sent ✓"; setTimeout(function(){b.innerHTML="&#128172; Send message";},1500); }); }; });
+    document.querySelectorAll("[data-remote]").forEach(function(b){ b.onclick=function(){ if(b.disabled) return; openRemote(b.getAttribute("data-remote")); }; });
     document.querySelectorAll("[data-update]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-update");
         fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"update"})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent="Update queued ✓"; setTimeout(function(){b.innerHTML="&#11015;&#65039; Update app";},1500); }); }; });
@@ -175,6 +203,66 @@ function poll(fromDraft){
     if(fromDraft){ render(lastDevices); return; }
     fetch("/api/devices").then(function(r){return r.json();}).then(function(data){ lastDevices=data.devices; render(data.devices); }).catch(function(){});
 }
+/* ===== Remote control: live view + tap replay ===== */
+var remote = null; // { id, frameTimer, modal }
+function openRemote(id){
+    var d=lastDevices.filter(function(x){return x.id===id;})[0];
+    var name=d?d.name:"Tablet";
+    // Ask the tablet to start streaming (it only streams while this is on).
+    fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"stream",on:true})})
+    .then(function(r){ if(r.status===401){alert("Wrong admin token");return;}
+        var m=document.createElement("div"); m.className="modal";
+        m.innerHTML=
+            '<div class="mhead">'+
+                '<span class="name">&#128241; '+esc(name)+'</span>'+
+                '<span class="spacer"></span>'+
+                '<button class="btn primary" id="rc-close">Close</button>'+
+            '</div>'+
+            '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">(streaming starts on its next check-in)</span></div></div>'+
+            '<div class="mhint">Tap the screen to tap on the tablet. This controls the Brain Arcade app only. Streaming stops when you close this.</div>';
+        document.body.appendChild(m);
+        remote={ id:id, modal:m, frameTimer:null };
+        document.getElementById("rc-close").onclick=closeRemote;
+        pullFrame();
+        remote.frameTimer=setInterval(pullFrame, 1200);
+    });
+}
+function pullFrame(){
+    if(!remote) return;
+    fetch("/api/frame?deviceId="+encodeURIComponent(remote.id)).then(function(r){return r.json();}).then(function(f){
+        if(!remote) return;
+        var wrap=remote.modal.querySelector(".screen-wrap");
+        if(!f.data){ return; }
+        var img=remote.modal.querySelector("img.screen");
+        if(!img){
+            wrap.innerHTML="";
+            img=document.createElement("img"); img.className="screen"; wrap.appendChild(img);
+            img.addEventListener("click",function(e){ sendTap(img,e.clientX,e.clientY); });
+        }
+        img.src="data:image/jpeg;base64,"+f.data;
+    }).catch(function(){});
+}
+function sendTap(img,cx,cy){
+    var rect=img.getBoundingClientRect();
+    var x=(cx-rect.left)/rect.width, y=(cy-rect.top)/rect.height;
+    if(x<0||x>1||y<0||y>1) return;
+    // visual ping
+    var dot=document.createElement("div"); dot.className="tapdot";
+    dot.style.left=(cx-remote.modal.querySelector(".screen-wrap").getBoundingClientRect().left)+"px";
+    dot.style.top=(cy-remote.modal.querySelector(".screen-wrap").getBoundingClientRect().top)+"px";
+    remote.modal.querySelector(".screen-wrap").appendChild(dot);
+    setTimeout(function(){ if(dot.parentNode)dot.parentNode.removeChild(dot); },500);
+    fetch("/api/input",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:remote.id,x:x,y:y})}).catch(function(){});
+}
+function closeRemote(){
+    if(!remote) return;
+    var id=remote.id;
+    clearInterval(remote.frameTimer);
+    if(remote.modal.parentNode) remote.modal.parentNode.removeChild(remote.modal);
+    remote=null;
+    fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"stream",on:false})}).catch(function(){});
+}
+
 poll(); setInterval(poll, 3000);
 </script>
 </body>

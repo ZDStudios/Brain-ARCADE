@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.5.1";
+    var VERSION = "1.6.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -25,8 +25,16 @@
     if (settings.serverUrl == null) settings.serverUrl = "";
     if (settings.deviceName == null) settings.deviceName = "";
 
+    // Prefer a stable hardware id so scores can be restored after a reinstall.
     var deviceId = load("deviceId", null);
-    if (!deviceId) { deviceId = "dev_" + Math.random().toString(36).slice(2, 10); save("deviceId", deviceId); }
+    try {
+        if (window.AndroidBridge && typeof window.AndroidBridge.getDeviceId === "function") {
+            var hw = window.AndroidBridge.getDeviceId();
+            if (hw && String(hw).length >= 6) deviceId = "and_" + hw;
+        }
+    } catch (e) {}
+    if (!deviceId) { deviceId = "dev_" + Math.random().toString(36).slice(2, 10); }
+    save("deviceId", deviceId);
 
     function applyTheme() {
         document.documentElement.setAttribute("data-theme", settings.theme === "light" ? "light" : "dark");
@@ -287,20 +295,45 @@
         return navigator.onLine !== false;
     }
     var pollTimer = null;
+    var pendingClearScores = false;
     function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms || 15000); }
     function setGovern(v) { if (serverGoverns !== v) { serverGoverns = v; refreshPolicyUI(); } }
+    // Current best scores, so the server can back them up (survives reinstall).
+    function currentScores() {
+        var out = {};
+        GAMES.forEach(function (g) { var b = getBest(g.id); if (b != null) out[g.id] = b; });
+        return out;
+    }
+    // Merge a server backup into local bests, respecting each game's scoring mode.
+    function mergeBackup(backup) {
+        if (!backup || typeof backup !== "object") return;
+        var changed = false;
+        GAMES.forEach(function (g) {
+            if (!(g.id in backup)) return;
+            var remote = backup[g.id], localBest = getBest(g.id), mode = g.best || "high";
+            var better = localBest == null || (mode === "low" ? remote < localBest : remote > localBest);
+            if (better) { save(bestKey(g.id), remote); changed = true; }
+        });
+        if (changed && route === "home") renderHome();
+    }
     function poll() {
-        if (!serverUrl()) { setDot("off"); setGovern(false); return schedulePoll(30000); }
-        if (!online()) { setDot("offline"); setGovern(false); return schedulePoll(12000); }
+        if (!serverUrl()) { setDot("off"); setGovern(false); stopStream(); return schedulePoll(30000); }
+        if (!online()) { setDot("offline"); setGovern(false); stopStream(); return schedulePoll(12000); }
         var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
+        var body = {
+            deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
+            games: GAMES.map(function (g) { return { id: g.id, name: g.name }; }),
+            scores: currentScores()
+        };
+        if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
         fetch(serverUrl() + "/api/heartbeat", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel }),
+            body: JSON.stringify(body),
             signal: ctrl
         }).then(function (r) { return r.json(); }).then(function (data) {
             setDot("online");
             applyPolicy(data || {});
-        }).catch(function () { setDot("offline"); setGovern(false); }).finally(function () { schedulePoll(15000); });
+        }).catch(function () { setDot("offline"); setGovern(false); stopStream(); }).finally(function () { schedulePoll(streaming ? 4000 : 15000); });
     }
     function applyPolicy(data) {
         var newLocked = !!data.locked;
@@ -317,7 +350,63 @@
             save("lastAppUpdate", data.appUpdate);
             try { if (window.AndroidBridge && window.AndroidBridge.checkUpdate) { window.AndroidBridge.checkUpdate(); toast("Checking for an app update…"); } } catch (e) {}
         }
+        // Restore/merge any backed-up scores (e.g. after a reinstall).
+        if (data.scoresBackup) mergeBackup(data.scoresBackup);
+        // Remote pop-up message from the dashboard.
+        if (data.popup && data.popup.ts && data.popup.ts !== load("lastPopup", null)) {
+            save("lastPopup", data.popup.ts);
+            showMessage(data.popup.text || "");
+        }
+        // On-demand screen streaming (only while the dashboard asks for it).
+        if (data.stream) startStream(); else stopStream();
+        // Replay any remote taps queued by the dashboard.
+        if (Array.isArray(data.input) && data.input.length) data.input.forEach(applyRemoteTap);
         if (changed) refreshPolicyUI();
+    }
+
+    /* ---------- remote pop-up message ---------- */
+    function showMessage(text) {
+        if (!text) return;
+        overlay({ emoji: "&#128172;", title: "Message", sub: esc(text),
+            buttons: [ { label: "OK", primary: true } ] });
+        Sound.pop(); haptic(20);
+    }
+    function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+    /* ---------- on-demand screen streaming + remote taps ---------- */
+    var streaming = false, streamTimer = null;
+    function canCapture() { try { return !!(window.AndroidBridge && typeof window.AndroidBridge.captureScreen === "function"); } catch (e) { return false; } }
+    function startStream() {
+        if (streaming) return;
+        if (!canCapture()) return; // only the installed app can capture its own screen
+        streaming = true;
+        clearTimeout(streamTimer);
+        (function loop() {
+            if (!streaming) return;
+            try {
+                var b64 = window.AndroidBridge.captureScreen();
+                if (b64 && serverUrl()) {
+                    fetch(serverUrl() + "/api/frame", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ deviceId: deviceId, data: b64 })
+                    }).catch(function () {});
+                }
+            } catch (e) {}
+            streamTimer = setTimeout(loop, 1200);
+        })();
+    }
+    function stopStream() { streaming = false; clearTimeout(streamTimer); }
+    function applyRemoteTap(t) {
+        if (!t || typeof t.x !== "number" || typeof t.y !== "number") return;
+        var cx = Math.round(t.x * window.innerWidth), cy = Math.round(t.y * window.innerHeight);
+        var target = document.elementFromPoint(cx, cy);
+        if (!target) return;
+        var opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, view: window };
+        try { target.dispatchEvent(new PointerEvent("pointerdown", opts)); } catch (e) {}
+        try { target.dispatchEvent(new MouseEvent("mousedown", opts)); } catch (e) {}
+        try { target.dispatchEvent(new MouseEvent("mouseup", opts)); } catch (e) {}
+        try { target.dispatchEvent(new PointerEvent("pointerup", opts)); } catch (e) {}
+        try { target.dispatchEvent(new MouseEvent("click", opts)); } catch (e) {}
     }
     function refreshPolicyUI() {
         renderLock();
@@ -504,7 +593,9 @@
             el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Web browser (PIN)" }), el("div", { class: "s-sub", text: "Open an in-app browser" }) ]),
             el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(function () {
                 try { if (window.AndroidBridge && window.AndroidBridge.openBrowser) { window.AndroidBridge.openBrowser(); return; } } catch (e) {}
-                toast("The browser is only available in the installed app");
+                // Not the installed app (e.g. played from the dashboard): open a normal browser tab.
+                var w = null; try { w = window.open("https://www.google.com", "_blank"); } catch (e) {}
+                if (!w) toast("Update to the latest app to use the built-in browser");
             }); } })
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
@@ -529,6 +620,7 @@
                 overlay({ emoji: "&#9888;&#65039;", title: "Reset all scores?", sub: "This can't be undone.",
                     buttons: [ { label: "Cancel" }, { label: "Reset", primary: true, onClick: function () {
                         GAMES.forEach(function (d) { try { LS.removeItem("ba_" + bestKey(d.id)); } catch (e) {} });
+                        pendingClearScores = true; poll(); // also wipe the server backup
                         toast("High scores cleared"); Sound.good();
                     } } ] });
             } })

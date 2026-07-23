@@ -16,9 +16,12 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const ONLINE_MS = 40000;
 
-const devices = Object.create(null);  // id -> { id, name, app, lastSeen, battery }
+const devices = Object.create(null);  // id -> { id, name, app, lastSeen, battery, games }
 const policies = Object.create(null); // id -> { locked, allowedGames }
-const commands = Object.create(null); // id -> { appUpdateAt }
+const commands = Object.create(null); // id -> { appUpdateAt, popupText, popupAt, stream }
+const frames = Object.create(null);   // id -> { data, ts }  (latest screen image, on-demand)
+const inputs = Object.create(null);   // id -> [ { x, y } ]  (queued remote taps)
+const scores = Object.create(null);   // id -> { gameId: bestValue }  (backup across reinstalls)
 
 function defaultPolicy() { return { locked: false, allowedGames: null }; }
 
@@ -60,18 +63,46 @@ const server = http.createServer(async function (req, res) {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         var bat = (typeof b.battery === "number" && b.battery >= 0) ? b.battery : null;
-        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat };
+        var prev = devices[b.deviceId] || {};
+        var games = Array.isArray(b.games) && b.games.length ? b.games : (prev.games || null);
+        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat, games: games };
         const pol = policies[b.deviceId] || defaultPolicy();
-        const cmd = commands[b.deviceId] || {};
-        return send(res, 200, { locked: !!pol.locked, allowedGames: pol.allowedGames, appUpdate: cmd.appUpdateAt || null });
+        const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
+
+        // --- score backup / restore (keyed by the device's stable id) ---
+        if (b.clearScores) { scores[b.deviceId] = {}; }
+        if (b.scores && typeof b.scores === "object") {
+            var store = scores[b.deviceId] || (scores[b.deviceId] = {});
+            // The device is authoritative for the games it reports a best for.
+            Object.keys(b.scores).forEach(function (g) { store[g] = b.scores[g]; });
+        }
+
+        // --- drain queued remote taps for this device ---
+        var taps = inputs[b.deviceId] || [];
+        inputs[b.deviceId] = [];
+
+        return send(res, 200, {
+            locked: !!pol.locked,
+            allowedGames: pol.allowedGames,
+            appUpdate: cmd.appUpdateAt || null,
+            popup: cmd.popupAt ? { text: cmd.popupText || "", ts: cmd.popupAt } : null,
+            stream: !!cmd.stream,
+            input: taps,
+            scoresBackup: scores[b.deviceId] || null
+        });
     }
 
     if (p === "/api/devices" && req.method === "GET") {
         const now = Date.now();
         const list = Object.keys(devices).map(function (id) {
             const d = devices[id];
+            const cmd = commands[id] || {};
+            const fr = frames[id];
             return {
                 id: d.id, name: d.name, app: d.app, battery: d.battery,
+                games: d.games || null,
+                streaming: !!cmd.stream,
+                hasFrame: !!(fr && (now - fr.ts) < 15000),
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
                 policy: policies[id] || defaultPolicy()
             };
@@ -83,7 +114,37 @@ const server = http.createServer(async function (req, res) {
         if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
-        if (b.action === "update") { commands[b.deviceId] = { appUpdateAt: Date.now() }; }
+        const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
+        if (b.action === "update") { cmd.appUpdateAt = Date.now(); }
+        else if (b.action === "popup") { cmd.popupText = String(b.text || "").slice(0, 500); cmd.popupAt = Date.now(); }
+        else if (b.action === "stream") { cmd.stream = !!b.on; if (!b.on) delete frames[b.deviceId]; }
+        return send(res, 200, { ok: true });
+    }
+
+    // Device uploads a screen frame (only while streaming is enabled).
+    if (p === "/api/frame" && req.method === "POST") {
+        const b = await readBody(req);
+        if (!b.deviceId || !b.data) return send(res, 400, { error: "deviceId and data required" });
+        frames[b.deviceId] = { data: String(b.data), ts: Date.now() };
+        return send(res, 200, { ok: true });
+    }
+
+    // Dashboard fetches the latest frame for a device.
+    if (p === "/api/frame" && req.method === "GET") {
+        const id = u.searchParams.get("deviceId");
+        const fr = id && frames[id];
+        if (!fr) return send(res, 200, { data: null });
+        return send(res, 200, { data: fr.data, ts: fr.ts });
+    }
+
+    // Dashboard queues a remote tap (normalized 0..1 coordinates).
+    if (p === "/api/input" && req.method === "POST") {
+        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        var q = inputs[b.deviceId] || (inputs[b.deviceId] = []);
+        if (typeof b.x === "number" && typeof b.y === "number") q.push({ x: b.x, y: b.y });
+        if (q.length > 20) q.splice(0, q.length - 20);
         return send(res, 200, { ok: true });
     }
 
@@ -92,6 +153,7 @@ const server = http.createServer(async function (req, res) {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         delete devices[b.deviceId]; delete policies[b.deviceId]; delete commands[b.deviceId];
+        delete frames[b.deviceId]; delete inputs[b.deviceId]; delete scores[b.deviceId];
         return send(res, 200, { ok: true });
     }
 
