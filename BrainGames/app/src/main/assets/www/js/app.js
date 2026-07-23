@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.5.0";
+    var VERSION = "1.5.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -303,15 +303,21 @@
         }).catch(function () { setDot("offline"); setGovern(false); }).finally(function () { schedulePoll(15000); });
     }
     function applyPolicy(data) {
-        policy.locked = !!data.locked;
-        policy.allowedGames = Array.isArray(data.allowedGames) ? data.allowedGames.slice() : null;
-        serverGoverns = policy.locked || policy.allowedGames != null;
+        var newLocked = !!data.locked;
+        var newAllowed = Array.isArray(data.allowedGames) ? data.allowedGames.slice() : null;
+        var newGoverns = newLocked || newAllowed != null;
+        // Only touch the UI when the policy actually changed — otherwise the home
+        // screen would re-render (flash) on every 15s heartbeat.
+        var changed = newLocked !== policy.locked
+            || newGoverns !== serverGoverns
+            || JSON.stringify(newAllowed) !== JSON.stringify(policy.allowedGames);
+        policy.locked = newLocked; policy.allowedGames = newAllowed; serverGoverns = newGoverns;
         // Remote "update the app" command from the dashboard.
         if (data.appUpdate && data.appUpdate !== load("lastAppUpdate", null)) {
             save("lastAppUpdate", data.appUpdate);
             try { if (window.AndroidBridge && window.AndroidBridge.checkUpdate) { window.AndroidBridge.checkUpdate(); toast("Checking for an app update…"); } } catch (e) {}
         }
-        refreshPolicyUI();
+        if (changed) refreshPolicyUI();
     }
     function refreshPolicyUI() {
         renderLock();

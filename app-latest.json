@@ -1,6 +1,6 @@
 {
-  "versionCode": 5,
-  "versionName": "1.4.0",
+  "versionCode": 6,
+  "versionName": "1.5.1",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Fixes app-won't-open bug, adds battery indicator, Fruit Catch game, remote app-update + device removal."
+  "notes": "Fix home screen flashing every 15s on the heartbeat."
 }
