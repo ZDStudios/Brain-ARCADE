@@ -50,8 +50,8 @@ jobs:
           path: out/BrainArcade-debug.apk
           if-no-files-found: error
 
-      - name: Publish to a release (on manual run)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Publish to a release (every main build + manual run)
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: brain-arcade-latest
