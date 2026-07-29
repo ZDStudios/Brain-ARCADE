@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.0";
+    var VERSION = "1.7.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -76,13 +76,17 @@
         var pad = 56;
         var w = Math.max(200, (view ? view.clientWidth : window.innerWidth) - pad);
         var tab = isTablet();
-        // room for topbar + stat tiles + control buttons
-        var reserve = tab ? 300 : 250;
+        var tv = tvActive();
+        // room for topbar + stat tiles + control buttons (TV chrome is taller).
+        // fitExtra is added when a game turned out taller than the screen — see
+        // fitGameToScreen(), which keeps everything visible without scrolling.
+        var reserve = (tv ? 380 : tab ? 300 : 250) + fitExtra;
         var h = Math.max(240, window.innerHeight - reserve);
         var board = Math.min(w, h);
-        // let tablets use bigger boards but keep it comfortable
-        if (tab) board = Math.min(board, 560);
-        return { w: w, h: h, board: board, isTablet: tab, unit: tab ? 1.15 : 1 };
+        // let bigger screens use bigger boards but keep it comfortable
+        if (tv) board = Math.min(board, 760);
+        else if (tab) board = Math.min(board, 560);
+        return { w: w, h: h, board: board, isTablet: tab, isTV: tv, unit: tv ? 1.3 : tab ? 1.15 : 1 };
     }
     document.documentElement.classList.toggle("tablet", isTablet());
 
@@ -704,6 +708,10 @@
         animateView(); window.scrollTo(0, 0);
     }
 
+    // Extra board reserve for games whose controls make them taller than the
+    // screen (e.g. Block Blast's piece tray on a 720p TV). Measured after mount.
+    var fitExtra = 0, fitAttempts = 0;
+
     var RESUME_WINDOW = 30000; // 30s: offer to continue if you come back this quickly
     var DIFFS = [
         { id: "easy", label: "Easy", sub: "Ages ~6–8", emoji: "&#128522;" },
@@ -715,6 +723,7 @@
         if (effLocked()) return;
         if (!allowed(def.id)) { toast("This game is turned off"); return; }
         route = "game"; routeArg = def;
+        fitExtra = 0; fitAttempts = 0;   // each game gets its own fit budget
         clearOverlays(); removeHelpFab();
         document.getElementById("backBtn").hidden = false;
         view.innerHTML = "";
@@ -779,6 +788,20 @@
         current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null, difficulty: difficulty };
         showHelpFab(def);
         animateView(); window.scrollTo(0, 0);
+        // On a TV nobody wants to scroll with a remote: if the game came out
+        // taller than the screen, shrink the board once and re-mount.
+        if (tvActive()) requestAnimationFrame(function () { fitGameToScreen(def, difficulty, resumeState); });
+    }
+
+    function fitGameToScreen(def, difficulty, resumeState) {
+        var host = view.querySelector(".game-host");
+        if (!host || route !== "game" || fitAttempts >= 2) return;
+        var over = Math.round(host.getBoundingClientRect().bottom - window.innerHeight);
+        if (over <= 8) return;
+        fitAttempts++;
+        fitExtra += over + 16;
+        if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
+        launchGame(def, difficulty, resumeState);
     }
 
     function renderSettings() {
