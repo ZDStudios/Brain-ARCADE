@@ -408,3 +408,75 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .gm-row { display: flex; align-items: center; gap: 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
 .gm-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; flex: 0 0 auto; color: #fff; }
 .gm-name { flex: 1; font-weight: 700; font-size: 15px; }
+
+/* ============================================================
+   Remote / D-pad focus
+   A visible selection ring so a TV remote or arrow keys are usable.
+   ============================================================ */
+.nav-focus { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+.game-card.nav-focus {
+    outline: 4px solid #fff;
+    outline-offset: 2px;
+    transform: scale(1.05);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
+    z-index: 3;
+}
+.diff-card.nav-focus, .btn.nav-focus, .icon-btn.nav-focus { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+.switch.nav-focus { outline: 3px solid var(--accent-2); outline-offset: 4px; border-radius: 20px; }
+.pin-key.nav-focus { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+
+/* ============================================================
+   TV mode — big screen, 10-foot layout, overscan-safe
+   ============================================================ */
+:root.tv body { font-size: 18px; }
+:root.tv #topbar { padding: calc(2.6vh + var(--safe-top)) 5vw 1.4vh; }
+:root.tv #view { max-width: 1500px; padding: 2vh 5vw calc(4vh + var(--safe-bottom)); }
+:root.tv .brand { font-size: 30px; }
+:root.tv .brand-mark { font-size: 34px; }
+:root.tv .icon-btn { width: 62px; height: 62px; font-size: 28px; border-radius: 16px; }
+:root.tv .battery { font-size: 19px; padding: 11px 14px; border-radius: 14px; }
+:root.tv .battery .bat-ico { font-size: 21px; }
+
+:root.tv .hero { padding: 26px 30px; }
+:root.tv .hero h1 { font-size: 38px; }
+:root.tv .hero p { font-size: 20px; }
+:root.tv .section-label { font-size: 16px; margin: 24px 4px 14px; }
+
+:root.tv .grid { grid-template-columns: repeat(4, 1fr); gap: 24px; }
+@media (min-width: 1500px) { :root.tv .grid { grid-template-columns: repeat(5, 1fr); } }
+:root.tv .game-card { min-height: 200px; padding: 22px; border-radius: 22px; }
+:root.tv .game-card .ico { font-size: 54px; }
+:root.tv .game-card .name { font-size: 23px; }
+:root.tv .game-card .best { font-size: 15px; }
+
+:root.tv .btn { min-height: 62px; font-size: 20px; padding: 15px 28px; border-radius: 16px; }
+:root.tv .settings-group { border-radius: 22px; }
+:root.tv .setting-row { padding: 22px 24px; }
+:root.tv .setting-row .s-ico { font-size: 28px; width: 38px; }
+:root.tv .setting-row .s-text .s-title { font-size: 21px; }
+:root.tv .setting-row .s-text .s-sub { font-size: 15px; }
+:root.tv .seg button { font-size: 18px; padding: 14px; }
+:root.tv .switch { width: 68px; height: 40px; }
+:root.tv .switch .thumb { width: 32px; height: 32px; }
+:root.tv .switch input:checked + .track + .thumb { transform: translateX(28px); }
+:root.tv .text-input { font-size: 19px; padding: 14px 16px; }
+
+:root.tv .overlay .panel { max-width: 620px; padding: 34px; border-radius: 26px; }
+:root.tv .overlay .panel .big { font-size: 62px; }
+:root.tv .overlay .panel h2 { font-size: 34px; }
+:root.tv .overlay .panel p { font-size: 18px; }
+:root.tv .help-steps li { font-size: 18px; }
+:root.tv .chooser h2 { font-size: 34px; }
+:root.tv .chooser-ico { font-size: 76px; }
+:root.tv .diff-list { max-width: 520px; }
+:root.tv .diff-card { padding: 22px 24px; }
+:root.tv .diff-label { font-size: 24px; }
+:root.tv .diff-sub { font-size: 16px; }
+:root.tv .small-note { font-size: 16px; }
+:root.tv .toast { font-size: 19px; padding: 16px 22px; }
+:root.tv .help-fab { width: 66px; height: 66px; font-size: 30px; }
+:root.tv .lock-inner h2 { font-size: 44px; }
+:root.tv .lock-inner p { font-size: 20px; max-width: 520px; }
+
+/* On a TV there is no touch — make the pointer disappear. */
+:root.tv, :root.tv * { cursor: none; }

@@ -65,7 +65,11 @@ const server = http.createServer(async function (req, res) {
         var bat = (typeof b.battery === "number" && b.battery >= 0) ? b.battery : null;
         var prev = devices[b.deviceId] || {};
         var games = Array.isArray(b.games) && b.games.length ? b.games : (prev.games || null);
-        devices[b.deviceId] = { id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(), battery: bat, games: games, canStream: !!b.canStream };
+        devices[b.deviceId] = {
+            id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(),
+            battery: bat, games: games, canStream: !!b.canStream,
+            canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv
+        };
         const pol = policies[b.deviceId] || defaultPolicy();
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
 
@@ -86,6 +90,7 @@ const server = http.createServer(async function (req, res) {
             allowedGames: pol.allowedGames,
             appUpdate: cmd.appUpdateAt || null,
             popup: cmd.popupAt ? { text: cmd.popupText || "", ts: cmd.popupAt } : null,
+            kiosk: cmd.kioskAt ? { on: !!cmd.kioskOn, ts: cmd.kioskAt } : null,
             stream: !!cmd.stream,
             input: taps,
             scoresBackup: scores[b.deviceId] || null
@@ -102,6 +107,7 @@ const server = http.createServer(async function (req, res) {
                 id: d.id, name: d.name, app: d.app, battery: d.battery,
                 games: d.games || null,
                 canStream: !!d.canStream,
+                canKiosk: !!d.canKiosk, kiosk: !!d.kiosk, tv: !!d.tv,
                 streaming: !!cmd.stream,
                 hasFrame: !!(fr && (now - fr.ts) < 15000),
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
@@ -119,6 +125,7 @@ const server = http.createServer(async function (req, res) {
         if (b.action === "update") { cmd.appUpdateAt = Date.now(); }
         else if (b.action === "popup") { cmd.popupText = String(b.text || "").slice(0, 500); cmd.popupAt = Date.now(); }
         else if (b.action === "stream") { cmd.stream = !!b.on; if (!b.on) delete frames[b.deviceId]; }
+        else if (b.action === "kiosk") { cmd.kioskOn = !!b.on; cmd.kioskAt = Date.now(); }
         return send(res, 200, { ok: true });
     }
 

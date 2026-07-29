@@ -2,10 +2,17 @@ package com.braingames.arcade;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.UiModeManager;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.net.ConnectivityManager;
@@ -20,6 +27,7 @@ import android.os.Vibrator;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -46,20 +54,23 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.6.1";
+    private static final String BUNDLED_VERSION = "1.7.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
+
+    private static final String PREF_KIOSK = "kioskEnabled";
 
     private WebView webView;
     private SharedPreferences prefs;
+    private DevicePolicyManager dpm;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("braingames", MODE_PRIVATE);
+        dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
 
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        applySystemUi(isKioskEnabled());
 
         webView = new WebView(this);
         setContentView(webView);
@@ -97,10 +108,119 @@ public class MainActivity extends Activity {
 
         webView.loadUrl(currentIndexUrl());
 
+        // Re-enter kiosk if it was left on (including after a reboot).
+        if (isKioskEnabled()) applyKiosk(true);
+
         // Check for OTA updates in the background (games always work offline regardless).
         if (isOnlineInternal()) {
             new Thread(new Runnable() { public void run() { checkForUpdate(false); checkForApkUpdate(); } }).start();
         }
+    }
+
+    /* ================= Kiosk mode =================
+       Replaces the old separate "Kiosk Lock" app. Two levels:
+         1. Plain install  - Android screen pinning keeps kids inside the app.
+         2. Device owner   - true lock task, no escape gesture at all. Set up once with:
+            adb shell dpm set-device-owner com.braingames.arcade/.KioskDeviceAdminReceiver
+       Either way the app can also be made the Home app, so Home returns here.       */
+
+    private boolean isKioskEnabled() { return prefs.getBoolean(PREF_KIOSK, false); }
+
+    private boolean isDeviceOwnerInternal() {
+        try { return dpm != null && dpm.isDeviceOwnerApp(getPackageName()); } catch (Exception e) { return false; }
+    }
+
+    private boolean inLockTask() {
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            return am != null && am.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE;
+        } catch (Exception e) { return false; }
+    }
+
+    /**
+     * The HOME entry point is a disabled alias by default, so a normal install never
+     * asks "which Home app?". Turning kiosk on enables it, which lets the user make
+     * Brain Arcade the Home app; turning kiosk off hides it again.
+     */
+    private void setHomeAliasEnabled(boolean enabled) {
+        try {
+            ComponentName alias = new ComponentName(this, getPackageName() + ".HomeAlias");
+            getPackageManager().setComponentEnabledSetting(
+                    alias,
+                    enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                            : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP);
+        } catch (Exception ignored) {}
+    }
+
+    private void applySystemUi(boolean kiosk) {
+        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (kiosk) {
+            flags |= View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        }
+        try { getWindow().getDecorView().setSystemUiVisibility(flags); } catch (Exception ignored) {}
+    }
+
+    private void applyKiosk(boolean on) {
+        prefs.edit().putBoolean(PREF_KIOSK, on).apply();
+        setHomeAliasEnabled(on);
+        try {
+            if (on) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                // As device owner we can whitelist ourselves so lock task has no exit gesture.
+                if (isDeviceOwnerInternal()) {
+                    try { dpm.setLockTaskPackages(KioskDeviceAdminReceiver.component(this), new String[]{ getPackageName() }); }
+                    catch (Exception ignored) {}
+                }
+                if (!inLockTask()) startLockTask();
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                if (inLockTask()) stopLockTask();
+            }
+        } catch (Exception ignored) {
+            // Screen pinning can be refused (e.g. no lock screen set); the app still
+            // runs normally, it just isn't pinned.
+        }
+        applySystemUi(on);
+    }
+
+    private boolean isTvInternal() {
+        try {
+            UiModeManager um = (UiModeManager) getSystemService(UI_MODE_SERVICE);
+            if (um != null && um.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) return true;
+        } catch (Exception ignored) {}
+        try {
+            PackageManager pm = getPackageManager();
+            if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return true;
+            return !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
+        } catch (Exception e) { return false; }
+    }
+
+    private boolean isHomeAppInternal() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            return ri != null && ri.activityInfo != null && getPackageName().equals(ri.activityInfo.packageName);
+        } catch (Exception e) { return false; }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-assert pinning if Android dropped it (e.g. after a system dialog).
+        if (isKioskEnabled() && !inLockTask()) {
+            try { startLockTask(); } catch (Exception ignored) {}
+        }
+        applySystemUi(isKioskEnabled());
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applySystemUi(isKioskEnabled());
     }
 
     /** Load the updated bundle from internal storage if present, else the bundled assets. */
@@ -269,9 +389,14 @@ public class MainActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView != null) {
+            final boolean kiosk = isKioskEnabled();
             webView.evaluateJavascript(
                     "(window.BrainGames && window.BrainGames.handleBack) ? window.BrainGames.handleBack() : false;",
-                    value -> { if (!"true".equals(value)) finish(); });
+                    value -> {
+                        // In kiosk mode Back never leaves the app — it only steps back
+                        // inside Brain Arcade.
+                        if (!"true".equals(value) && !kiosk) finish();
+                    });
             return true;
         }
         return super.onKeyDown(keyCode, event);
@@ -319,6 +444,48 @@ public class MainActivity extends Activity {
         public void checkUpdate() {
             if (isOnlineInternal()) new Thread(new Runnable() { public void run() { checkForUpdate(true); checkForApkUpdate(); } }).start();
         }
+
+        /* ---------- kiosk + TV ---------- */
+
+        @JavascriptInterface
+        public boolean isKiosk() { return isKioskEnabled(); }
+
+        /** Turn kiosk mode on/off. Returns the state actually reached. */
+        @JavascriptInterface
+        public boolean setKiosk(final boolean on) {
+            runOnUiThread(new Runnable() { public void run() { applyKiosk(on); } });
+            return on;
+        }
+
+        /** True when provisioned as device owner (kiosk with no escape gesture). */
+        @JavascriptInterface
+        public boolean isDeviceOwner() { return isDeviceOwnerInternal(); }
+
+        /** True when Brain Arcade is the current Home app. */
+        @JavascriptInterface
+        public boolean isHomeApp() { return isHomeAppInternal(); }
+
+        /** Open Android's "Default apps / Home app" picker so Brain Arcade can be set as Home. */
+        @JavascriptInterface
+        public void openHomeSettings() {
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    Intent i = new Intent(Settings.ACTION_HOME_SETTINGS);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                } catch (Exception e) {
+                    try {
+                        Intent i2 = new Intent(Settings.ACTION_SETTINGS);
+                        i2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i2);
+                    } catch (Exception ignored) {}
+                }
+            } });
+        }
+
+        /** True on Android TV / any device without a touchscreen. */
+        @JavascriptInterface
+        public boolean isTV() { return isTvInternal(); }
 
         /** A stable per-device id so scores can be restored after a reinstall. */
         @JavascriptInterface

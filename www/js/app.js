@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.6.1";
+    var VERSION = "1.7.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -24,6 +24,31 @@
     var settings = load("settings", { theme: "dark", sound: true, haptics: true, serverUrl: "", deviceName: "" });
     if (settings.serverUrl == null) settings.serverUrl = "";
     if (settings.deviceName == null) settings.deviceName = "";
+    if (settings.tvMode == null) settings.tvMode = "auto"; // "auto" | "on" | "off"
+
+    /* ---------- native bridge helpers ---------- */
+    function bridgeCall(name, dflt, arg) {
+        try {
+            var b = window.AndroidBridge;
+            if (b && typeof b[name] === "function") return (arg === undefined ? b[name]() : b[name](arg));
+        } catch (e) {}
+        return dflt;
+    }
+    function hasBridge() { return bridgeCall("isTV", null) !== null || !!(window.AndroidBridge && window.AndroidBridge.vibrate); }
+
+    /* ---------- TV / big-screen mode ---------- */
+    var tvDetected = (function () {
+        if (bridgeCall("isTV", false) === true) return true;
+        try { if (/\btv\b|smarttv|googletv|appletv|hbbtv|netcast|webos|tizen|bravia|crkey|aft[bmst]/i.test(navigator.userAgent)) return true; } catch (e) {}
+        try { if (location.search.indexOf("tv=1") > -1) return true; } catch (e) {}
+        return false;
+    })();
+    function tvActive() {
+        if (settings.tvMode === "on") return true;
+        if (settings.tvMode === "off") return false;
+        return tvDetected;
+    }
+    function applyTvClass() { document.documentElement.classList.toggle("tv", tvActive()); }
 
     // Prefer a stable hardware id so scores can be restored after a reinstall.
     var deviceId = load("deviceId", null);
@@ -128,6 +153,136 @@
         toastTimer = setTimeout(function () { t.classList.remove("show"); setTimeout(function () { t.hidden = true; }, 250); }, 1800);
     }
 
+    /* ============================================================
+       D-pad / remote navigation
+       Lets a TV remote, arrow keys or a game controller drive the whole
+       UI. Deliberately inactive during gameplay so the arrow keys still
+       belong to Snake, Tetris, 2048 and friends.
+       ============================================================ */
+    var NAV_SEL = ".game-card, .btn, .icon-btn, .diff-card, .pin-key, .seg button, .switch, .text-input, .help-fab";
+    var navFocused = null;
+
+    // Modal overlays capture navigation so focus can't wander behind them.
+    function navScope() {
+        var ovs = document.querySelectorAll(".overlay");
+        if (ovs.length) return ovs[ovs.length - 1];
+        return document;
+    }
+    function isVisible(e) {
+        var r = e.getBoundingClientRect();
+        return r.width > 4 && r.height > 4;
+    }
+    function navCandidates() {
+        var out = [], els = navScope().querySelectorAll(NAV_SEL);
+        for (var i = 0; i < els.length; i++) {
+            var e = els[i];
+            if (e.disabled || e.hasAttribute("hidden")) continue;
+            if (!isVisible(e)) continue;
+            out.push(e);
+        }
+        return out;
+    }
+    function isNavCandidate(e) { return !!e && navCandidates().indexOf(e) > -1; }
+    function ensureFocusable() {
+        var els = document.querySelectorAll(NAV_SEL);
+        for (var i = 0; i < els.length; i++) {
+            if (!els[i].hasAttribute("tabindex") && els[i].tagName !== "BUTTON" && els[i].tagName !== "INPUT" && els[i].tagName !== "A") {
+                els[i].setAttribute("tabindex", "0");
+            }
+        }
+    }
+    function focusEl(e) {
+        if (!e) return;
+        if (navFocused && navFocused !== e) navFocused.classList.remove("nav-focus");
+        navFocused = e;
+        e.classList.add("nav-focus");
+        try { e.focus({ preventScroll: true }); } catch (err) { try { e.focus(); } catch (e2) {} }
+        try { e.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" }); } catch (err) {}
+    }
+    function focusFirst() {
+        var list = navCandidates();
+        if (!list.length) return false;
+        // Prefer the first real content control over the top-bar icons.
+        var pick = list[0];
+        for (var i = 0; i < list.length; i++) {
+            if (!list[i].classList.contains("icon-btn")) { pick = list[i]; break; }
+        }
+        focusEl(pick);
+        return true;
+    }
+    function pickInDirection(from, dir) {
+        var list = navCandidates();
+        if (!from || list.indexOf(from) < 0) return list[0] || null;
+        var a = from.getBoundingClientRect();
+        var ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+        var best = null, bestScore = Infinity;
+        for (var i = 0; i < list.length; i++) {
+            var e = list[i];
+            if (e === from) continue;
+            var b = e.getBoundingClientRect();
+            var dx = (b.left + b.width / 2) - ax, dy = (b.top + b.height / 2) - ay;
+            var along, across;
+            if (dir === "left") { along = -dx; across = Math.abs(dy); }
+            else if (dir === "right") { along = dx; across = Math.abs(dy); }
+            else if (dir === "up") { along = -dy; across = Math.abs(dx); }
+            else { along = dy; across = Math.abs(dx); }
+            if (along <= 2) continue;                  // must lie in that direction
+            var score = along + across * 2.2;          // strongly prefer aligned neighbours
+            if (score < bestScore) { bestScore = score; best = e; }
+        }
+        return best;
+    }
+    // Navigation is off mid-game (arrows belong to the game) but on for
+    // menus, choosers and any overlay — including a game-over panel.
+    function navEnabled() {
+        if (document.querySelector(".overlay")) return true;
+        if (document.querySelector(".chooser")) return true;
+        return route !== "game";
+    }
+    function isTyping(e) { return !!e && (e.tagName === "INPUT" || e.tagName === "TEXTAREA"); }
+
+    function onNavKey(ev) {
+        var k = ev.key;
+        var dir = k === "ArrowLeft" ? "left" : k === "ArrowRight" ? "right"
+                : k === "ArrowUp" ? "up" : k === "ArrowDown" ? "down" : null;
+        var active = document.activeElement;
+        if (dir) {
+            if (!navEnabled() || isTyping(active)) return;
+            ensureFocusable();
+            if (!isNavCandidate(active)) { if (focusFirst()) ev.preventDefault(); return; }
+            var next = pickInDirection(active, dir);
+            if (next) { focusEl(next); ev.preventDefault(); }
+            return;
+        }
+        if (k === "Enter" || k === " " || k === "Spacebar") {
+            if (!navEnabled() || isTyping(active)) return;
+            if (isNavCandidate(active)) {
+                // Labels/divs don't fire a click from Enter on their own.
+                if (active.tagName !== "BUTTON" && active.tagName !== "A") { active.click(); ev.preventDefault(); }
+            }
+            return;
+        }
+        if (k === "Escape" || k === "Backspace" || k === "BrowserBack") {
+            if (isTyping(active)) return;
+            if (handleBack()) ev.preventDefault();
+        }
+    }
+
+    var navRefreshTimer = null;
+    function startNavWatcher() {
+        try {
+            var obs = new MutationObserver(function () {
+                clearTimeout(navRefreshTimer);
+                navRefreshTimer = setTimeout(function () {
+                    ensureFocusable();
+                    // On a TV there is no touch, so always keep something selected.
+                    if (tvActive() && navEnabled() && !isNavCandidate(document.activeElement)) focusFirst();
+                }, 60);
+            });
+            obs.observe(document.body, { childList: true, subtree: true });
+        } catch (e) {}
+    }
+
     /* ---------- best scores ---------- */
     function bestKey(id) { return "best_" + id; }
     function getBest(id) { return load(bestKey(id), null); }
@@ -220,6 +375,72 @@
         panel.appendChild(pad);
         panel.appendChild(el("button", { class: "btn ghost", text: "Cancel", style: "margin-top:12px", onclick: close }));
         ov.appendChild(panel); document.body.appendChild(ov);
+    }
+
+    /* ============================================================
+       Kiosk mode — built in (replaces the separate "Kiosk Lock" app)
+       ============================================================ */
+    function kioskSupported() { return bridgeCall("isKiosk", null) !== null; }
+    function kioskOn() { return bridgeCall("isKiosk", false) === true; }
+    function setKiosk(on) {
+        if (!kioskSupported()) { toast("Kiosk mode needs the installed app"); return false; }
+        bridgeCall("setKiosk", null, !!on);
+        document.documentElement.classList.toggle("kiosk", !!on);
+        toast(on ? "&#128274; Kiosk mode ON" : "&#128275; Kiosk mode OFF");
+        Sound.good(); haptic(20);
+        // Report the new state right away instead of waiting for the next
+        // 15s heartbeat, so the dashboard badge updates promptly.
+        setTimeout(function () { schedulePoll(300); }, 60);
+        return true;
+    }
+    function openKioskAdmin() {
+        var supported = kioskSupported();
+        var on = kioskOn();
+        var owner = bridgeCall("isDeviceOwner", false) === true;
+        var home = bridgeCall("isHomeApp", false) === true;
+        var ov = el("div", { class: "overlay" });
+        var panel = el("div", { class: "panel pop", style: "max-width:380px;text-align:left" });
+        panel.appendChild(el("div", { class: "big", style: "text-align:center", html: on ? "&#128274;" : "&#128275;" }));
+        panel.appendChild(el("h2", { style: "text-align:center", text: "Kiosk admin" }));
+        var status = on
+            ? (owner ? "Locked to Brain Arcade. No exit gesture (device owner)."
+                     : "Locked to Brain Arcade using screen pinning.")
+            : "Kiosk mode is off. The tablet works normally.";
+        panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 10px", text: status }));
+        if (supported) {
+            panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
+                html: "Home app: <b>" + (home ? "Brain Arcade" : "not set") + "</b>" +
+                      (home ? "" : " &middot; set it so the Home button stays in the app.") }));
+        } else {
+            panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
+                text: "Install the Brain Arcade app to use kiosk mode." }));
+        }
+        var btns = el("div", { class: "btn-row", style: "flex-direction:column;gap:10px" });
+        if (supported) {
+            btns.appendChild(el("button", { class: "btn " + (on ? "" : "primary"), style: "width:100%",
+                html: on ? "&#128275; Turn kiosk OFF" : "&#128274; Turn kiosk ON",
+                onclick: function () { close(); setKiosk(!on); } }));
+            if (!home) {
+                btns.appendChild(el("button", { class: "btn", style: "width:100%", text: "Set as Home app",
+                    onclick: function () { close(); bridgeCall("openHomeSettings", null); } }));
+            }
+        }
+        btns.appendChild(el("button", { class: "btn ghost", style: "width:100%", text: "Close", onclick: function () { close(); } }));
+        panel.appendChild(btns);
+        ov.appendChild(panel); document.body.appendChild(ov);
+        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+    }
+    // Hidden escape hatch: 7 quick taps in the top-left corner, then the PIN.
+    // Mirrors the old Kiosk Lock app's admin gesture.
+    function installCornerGesture() {
+        var taps = 0, timer = null;
+        document.addEventListener("pointerdown", function (ev) {
+            if (ev.clientX > 96 || ev.clientY > 96) { taps = 0; clearTimeout(timer); return; }
+            taps++;
+            clearTimeout(timer);
+            timer = setTimeout(function () { taps = 0; }, 2500);
+            if (taps >= 7) { taps = 0; openPin(openKioskAdmin); }
+        }, true);
     }
 
     /* ---------- game on/off manager (behind PIN) ---------- */
@@ -324,7 +545,10 @@
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
             games: GAMES.map(function (g) { return { id: g.id, name: g.name }; }),
             scores: currentScores(),
-            canStream: canCapture()  // true only in the installed app (needs native screen capture)
+            canStream: canCapture(),   // true only in the installed app (needs native screen capture)
+            canKiosk: kioskSupported(),
+            kiosk: kioskOn(),
+            tv: tvActive()
         };
         if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
         fetch(serverUrl() + "/api/heartbeat", {
@@ -357,6 +581,11 @@
         if (data.popup && data.popup.ts && data.popup.ts !== load("lastPopup", null)) {
             save("lastPopup", data.popup.ts);
             showMessage(data.popup.text || "");
+        }
+        // Remote kiosk on/off from the dashboard.
+        if (data.kiosk && data.kiosk.ts && data.kiosk.ts !== load("lastKiosk", null)) {
+            save("lastKiosk", data.kiosk.ts);
+            if (kioskSupported() && kioskOn() !== !!data.kiosk.on) setKiosk(!!data.kiosk.on);
         }
         // On-demand screen streaming (only while the dashboard asks for it).
         if (data.stream) startStream(); else stopStream();
@@ -455,7 +684,8 @@
         var grid = el("div", { class: "grid" });
         list.forEach(function (def, i) {
             var best = getBest(def.id);
-            var bestStr = best == null ? "Tap to play" : (def.bestLabel || "Best") + ": " + best + (def.bestSuffix || "");
+            var bestStr = best == null ? (tvActive() ? "Press OK to play" : "Tap to play")
+                                       : (def.bestLabel || "Best") + ": " + best + (def.bestSuffix || "");
             var card = el("div", { class: "game-card card-enter", style: "background:" + (def.gradient || "linear-gradient(135deg,#7C5CFF,#22D3EE)") + ";animation-delay:" + (i * 35) + "ms" }, [
                 el("div", { class: "art", style: def.art || "" }),
                 el("div", { class: "glass" }),
@@ -574,6 +804,25 @@
             seg.appendChild(b);
         });
         g1.appendChild(seg);
+        g1.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#128250;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "TV mode" }),
+                el("div", { class: "s-sub", text: "Big text and remote-friendly layout for a TV" })
+            ])
+        ]));
+        var tvSeg = el("div", { class: "seg", style: "margin:0 16px 15px" });
+        [["auto", "Auto"], ["on", "On"], ["off", "Off"]].forEach(function (m) {
+            var b = el("button", { class: settings.tvMode === m[0] ? "active" : "", text: m[1] });
+            b.addEventListener("click", function () {
+                settings.tvMode = m[0]; save("settings", settings);
+                applyTvClass();
+                tvSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+                b.classList.add("active"); Sound.click(); haptic(10);
+            });
+            tvSeg.appendChild(b);
+        });
+        g1.appendChild(tvSeg);
         wrap.appendChild(g1);
 
         wrap.appendChild(el("div", { class: "section-label", text: "Feedback" }));
@@ -598,6 +847,19 @@
                 var w = null; try { w = window.open("https://www.google.com", "_blank"); } catch (e) {}
                 if (!w) toast("Update to the latest app to use the built-in browser");
             }); } })
+        ]));
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: kioskOn() ? "&#128274;" : "&#128275;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Kiosk mode (PIN)" }),
+                el("div", { class: "s-sub", text: kioskSupported()
+                    ? (kioskOn()
+                        ? (tvActive() ? "ON — locked to Brain Arcade. Unlock here with the PIN."
+                                      : "ON — locked to Brain Arcade. 7 taps top-left, or unlock here.")
+                        : "Lock the device to Brain Arcade only")
+                    : "Needs the installed app" })
+            ]),
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(openKioskAdmin); } })
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
@@ -723,6 +985,8 @@
     /* ---------- boot ---------- */
     function boot() {
         setView();
+        applyTvClass();
+        document.documentElement.classList.toggle("kiosk", kioskOn());
         var topbar = document.getElementById("topbar");
         batteryEl = el("span", { id: "battery", class: "battery", style: "display:none" });
         topbar.insertBefore(batteryEl, topbar.firstChild);
@@ -741,6 +1005,12 @@
         window.addEventListener("offline", function () { setDot("offline"); });
         renderHome();
         renderLock();
+        // Remote / D-pad navigation + the hidden kiosk escape gesture.
+        document.addEventListener("keydown", onNavKey, false);
+        installCornerGesture();
+        ensureFocusable();
+        startNavWatcher();
+        if (tvActive()) setTimeout(focusFirst, 120);
         schedulePoll(1500);
     }
 

@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.6.1",
+  "versionCode": 8,
+  "versionName": "1.7.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Dashboard now tells you when a tablet needs the new APK for screen sharing; plus the v1.6 features: full game list, pop-up messages, on-demand screen view + tap control, and reinstall-proof high scores."
+  "notes": "Kiosk mode is now built into Brain Arcade (no separate Kiosk Lock app), plus full Android TV support: remote/D-pad navigation, big-screen layout and a TV home-screen banner."
 }
