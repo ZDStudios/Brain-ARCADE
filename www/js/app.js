@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.1";
+    var VERSION = "1.7.2";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -349,12 +349,14 @@
     }
 
     /* ---------- PIN keypad ---------- */
-    function openPin(onOk) {
+    function openPin(onOk, opts) {
+        opts = opts || {};
         var entered = "";
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop", style: "max-width:300px" });
         panel.appendChild(el("div", { class: "big", html: "&#128272;" }));
-        panel.appendChild(el("h2", { text: "Enter PIN" }));
+        panel.appendChild(el("h2", { text: opts.title || "Enter PIN" }));
+        if (opts.sub) panel.appendChild(el("p", { class: "small-note", style: "margin:2px 0 0", text: opts.sub }));
         var dots = el("div", { class: "pin-dots" });
         function drawDots() { dots.innerHTML = ""; for (var i = 0; i < 4; i++) dots.appendChild(el("span", { class: "pin-dot" + (i < entered.length ? " on" : "") })); }
         drawDots(); panel.appendChild(dots);
@@ -379,6 +381,21 @@
         panel.appendChild(pad);
         panel.appendChild(el("button", { class: "btn ghost", text: "Cancel", style: "margin-top:12px", onclick: close }));
         ov.appendChild(panel); document.body.appendChild(ov);
+    }
+
+    /* ---------- Settings are behind the PIN ----------
+       The whole Settings screen asks for the PIN once; after that everything
+       inside it is freely editable. The unlock lasts a few minutes (in memory
+       only) so hopping between Settings and a game doesn't keep asking.      */
+    var SETTINGS_GRACE = 5 * 60 * 1000;
+    var settingsUnlockedAt = 0;
+    function settingsUnlocked() { return (Date.now() - settingsUnlockedAt) < SETTINGS_GRACE; }
+    function openSettings() {
+        if (settingsUnlocked()) { go("settings"); return; }
+        openPin(function () {
+            settingsUnlockedAt = Date.now();
+            go("settings");
+        }, { title: "Settings locked", sub: "Grown-ups only — enter the PIN" });
     }
 
     /* ============================================================
@@ -858,31 +875,31 @@
         var g4 = el("div", { class: "settings-group" });
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#128274;" }),
-            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Manage games (PIN)" }), el("div", { class: "s-sub", text: "Turn games on or off. Works offline." }) ]),
-            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(openGameManager); } })
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Manage games" }), el("div", { class: "s-sub", text: "Turn games on or off. Works offline." }) ]),
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openGameManager(); } })
         ]));
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#127760;" }),
-            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Web browser (PIN)" }), el("div", { class: "s-sub", text: "Open an in-app browser" }) ]),
-            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(function () {
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Web browser" }), el("div", { class: "s-sub", text: "Open an in-app browser" }) ]),
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click();
                 try { if (window.AndroidBridge && window.AndroidBridge.openBrowser) { window.AndroidBridge.openBrowser(); return; } } catch (e) {}
                 // Not the installed app (e.g. played from the dashboard): open a normal browser tab.
                 var w = null; try { w = window.open("https://www.google.com", "_blank"); } catch (e) {}
                 if (!w) toast("Update to the latest app to use the built-in browser");
-            }); } })
+            } })
         ]));
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: kioskOn() ? "&#128274;" : "&#128275;" }),
             el("div", { class: "s-text" }, [
-                el("div", { class: "s-title", text: "Kiosk mode (PIN)" }),
+                el("div", { class: "s-title", text: "Kiosk mode" }),
                 el("div", { class: "s-sub", text: kioskSupported()
                     ? (kioskOn()
-                        ? (tvActive() ? "ON — locked to Brain Arcade. Unlock here with the PIN."
+                        ? (tvActive() ? "ON — locked to Brain Arcade. Unlock here."
                                       : "ON — locked to Brain Arcade. 7 taps top-left, or unlock here.")
                         : "Lock the device to Brain Arcade only")
                     : "Needs the installed app" })
             ]),
-            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openPin(openKioskAdmin); } })
+            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openKioskAdmin(); } })
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
@@ -1019,7 +1036,7 @@
         statusDot = el("span", { class: "status-dot off", style: "display:none" });
         brand.appendChild(statusDot);
         document.getElementById("backBtn").addEventListener("click", function () { Sound.click(); haptic(10); go("home"); });
-        document.getElementById("settingsBtn").addEventListener("click", function () { Sound.click(); haptic(10); route === "settings" ? go("home") : go("settings"); });
+        document.getElementById("settingsBtn").addEventListener("click", function () { Sound.click(); haptic(10); route === "settings" ? go("home") : openSettings(); });
         brand.addEventListener("click", function () { if (route !== "home") go("home"); });
         var unlock = function () { ac(); window.removeEventListener("touchstart", unlock); window.removeEventListener("mousedown", unlock); };
         window.addEventListener("touchstart", unlock);
@@ -1039,6 +1056,6 @@
 
     window.BrainGames = {
         register: register, boot: boot, handleBack: handleBack, toast: toast, go: go,
-        onUpdate: onUpdate, version: VERSION
+        openSettings: openSettings, onUpdate: onUpdate, version: VERSION
     };
 })();

@@ -1,6 +1,6 @@
 {
   "versionCode": 8,
-  "versionName": "1.7.1",
+  "versionName": "1.7.2",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Kiosk mode is now built into Brain Arcade (no separate Kiosk Lock app), plus full Android TV support: remote/D-pad navigation, big-screen layout that always fits the screen, and a TV home-screen banner."
+  "notes": "The Settings menu now asks for the PIN once to get in, then everything inside is freely editable. Plus built-in kiosk mode and full Android TV support."
 }
