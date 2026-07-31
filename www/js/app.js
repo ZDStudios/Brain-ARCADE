@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.2";
+    var VERSION = "1.7.3";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -34,7 +34,6 @@
         } catch (e) {}
         return dflt;
     }
-    function hasBridge() { return bridgeCall("isTV", null) !== null || !!(window.AndroidBridge && window.AndroidBridge.vibrate); }
 
     /* ---------- TV / big-screen mode ---------- */
     var tvDetected = (function () {
@@ -412,26 +411,32 @@
         // Report the new state right away instead of waiting for the next
         // 15s heartbeat, so the dashboard badge updates promptly.
         setTimeout(function () { schedulePoll(300); }, 60);
+        // Keep the Settings row in step with the change we just made.
+        if (route === "settings") setTimeout(function () { if (route === "settings") renderSettings(); }, 250);
         return true;
     }
+    function kioskPinned() { return bridgeCall("isPinned", false) === true; }
     function openKioskAdmin() {
         var supported = kioskSupported();
         var on = kioskOn();
         var owner = bridgeCall("isDeviceOwner", false) === true;
         var home = bridgeCall("isHomeApp", false) === true;
+        var pinned = kioskPinned();
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop", style: "max-width:380px;text-align:left" });
         panel.appendChild(el("div", { class: "big", style: "text-align:center", html: on ? "&#128274;" : "&#128275;" }));
         panel.appendChild(el("h2", { style: "text-align:center", text: "Kiosk admin" }));
         var status = on
             ? (owner ? "Locked to Brain Arcade. No exit gesture (device owner)."
-                     : "Locked to Brain Arcade using screen pinning.")
+                     : pinned ? "Locked to Brain Arcade using screen pinning."
+                              : "Kiosk is ON, but Android has not pinned the screen. Setting Brain Arcade as the Home app below keeps the Home button here.")
             : "Kiosk mode is off. The tablet works normally.";
         panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 10px", text: status }));
         if (supported) {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
                 html: "Home app: <b>" + (home ? "Brain Arcade" : "not set") + "</b>" +
-                      (home ? "" : " &middot; set it so the Home button stays in the app.") }));
+                      (home ? " &middot; the Home button stays in the app."
+                            : " &middot; set it so the Home button stays in the app.") }));
         } else {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
                 text: "Install the Brain Arcade app to use kiosk mode." }));
@@ -441,10 +446,9 @@
             btns.appendChild(el("button", { class: "btn " + (on ? "" : "primary"), style: "width:100%",
                 html: on ? "&#128275; Turn kiosk OFF" : "&#128274; Turn kiosk ON",
                 onclick: function () { close(); setKiosk(!on); } }));
-            if (!home) {
-                btns.appendChild(el("button", { class: "btn", style: "width:100%", text: "Set as Home app",
-                    onclick: function () { close(); bridgeCall("openHomeSettings", null); } }));
-            }
+            btns.appendChild(el("button", { class: "btn", style: "width:100%",
+                text: home ? "Give Home back to my launcher" : "Set as Home app",
+                onclick: function () { close(); bridgeCall("openHomeSettings", null); } }));
         }
         btns.appendChild(el("button", { class: "btn ghost", style: "width:100%", text: "Close", onclick: function () { close(); } }));
         panel.appendChild(btns);

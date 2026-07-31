@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.7.2";
+    private static final String BUNDLED_VERSION = "1.7.3";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -139,8 +139,11 @@ public class MainActivity extends Activity {
 
     /**
      * The HOME entry point is a disabled alias by default, so a normal install never
-     * asks "which Home app?". Turning kiosk on enables it, which lets the user make
-     * Brain Arcade the Home app; turning kiosk off hides it again.
+     * asks "which Home app?". It is switched on when kiosk mode is enabled, or when
+     * the user explicitly asks to set Brain Arcade as the Home app.
+     *
+     * It is never switched off while Brain Arcade IS the current Home app — disabling
+     * the registered home component would leave the device with a dead Home button.
      */
     private void setHomeAliasEnabled(boolean enabled) {
         try {
@@ -166,7 +169,13 @@ public class MainActivity extends Activity {
 
     private void applyKiosk(boolean on) {
         prefs.edit().putBoolean(PREF_KIOSK, on).apply();
-        setHomeAliasEnabled(on);
+        if (on) {
+            setHomeAliasEnabled(true);
+        } else if (!isHomeAppInternal()) {
+            // Only hide the Home entry when we are not the device's Home app. If we are,
+            // disabling it here would leave the device with no working Home button.
+            setHomeAliasEnabled(false);
+        }
         try {
             if (on) {
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -453,6 +462,9 @@ public class MainActivity extends Activity {
         /** Turn kiosk mode on/off. Returns the state actually reached. */
         @JavascriptInterface
         public boolean setKiosk(final boolean on) {
+            // Persist synchronously so an immediate isKiosk() from the web app is
+            // accurate — applyKiosk() itself has to run on the UI thread.
+            prefs.edit().putBoolean(PREF_KIOSK, on).commit();
             runOnUiThread(new Runnable() { public void run() { applyKiosk(on); } });
             return on;
         }
@@ -469,6 +481,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openHomeSettings() {
             runOnUiThread(new Runnable() { public void run() {
+                // 1. Brain Arcade can only appear in the Home-app list if its HOME entry
+                //    is switched on. Do that first, whether or not kiosk is enabled.
+                setHomeAliasEnabled(true);
+                // 2. Lock task blocks launching other apps, so a pinned kiosk could never
+                //    open Settings. Step out of the pin briefly — onResume() re-pins as
+                //    soon as we come back.
+                try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
                 try {
                     Intent i = new Intent(Settings.ACTION_HOME_SETTINGS);
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -482,6 +501,10 @@ public class MainActivity extends Activity {
                 }
             } });
         }
+
+        /** Whether Android actually has the screen pinned right now. */
+        @JavascriptInterface
+        public boolean isPinned() { return inLockTask(); }
 
         /** True on Android TV / any device without a touchscreen. */
         @JavascriptInterface

@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.7.2",
+  "versionCode": 9,
+  "versionName": "1.7.3",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "The Settings menu now asks for the PIN once to get in, then everything inside is freely editable. Plus built-in kiosk mode and full Android TV support."
+  "notes": "Fixes kiosk + Home app: 'Set as Home app' now actually works (it was never listed, and a pinned kiosk could not open Settings), and leaving kiosk no longer breaks the Home button."
 }
