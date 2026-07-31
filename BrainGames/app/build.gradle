@@ -10,13 +10,32 @@ android {
         applicationId "com.braingames.arcade"
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName "1.7.3"
+        versionCode 10
+        versionName "1.7.4"
+    }
+
+    // Every build must be signed with the SAME key, or Android refuses to install
+    // the update over the existing app ("App not installed" / "package conflicts
+    // with an existing package"). CI runners are wiped between builds, so relying
+    // on the auto-generated debug keystore produced a different key every time.
+    // This keystore is checked in on purpose — it is a build key for a personal
+    // side-loaded app, not a Play Store upload key.
+    signingConfigs {
+        arcade {
+            storeFile rootProject.file('keystore/brainarcade.jks')
+            storePassword 'brainarcade'
+            keyAlias 'brainarcade'
+            keyPassword 'brainarcade'
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.arcade
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.arcade
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

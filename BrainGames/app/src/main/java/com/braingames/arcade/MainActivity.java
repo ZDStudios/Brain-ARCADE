@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.7.3";
+    private static final String BUNDLED_VERSION = "1.7.4";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -316,21 +316,90 @@ public class MainActivity extends Activity {
             URL url = new URL(urlStr);
             conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(8000);
-            conn.setReadTimeout(12000);
+            conn.setReadTimeout(20000);
             conn.setInstanceFollowRedirects(true);
-            if (conn.getResponseCode() != 200) return null;
+            int code = conn.getResponseCode();
+            // GitHub release assets redirect to a different host; HttpURLConnection
+            // will not follow that automatically when the scheme changes.
+            if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                String next = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (next == null || next.isEmpty()) return null;
+                return httpGetBytes(next);
+            }
+            if (code != 200) return null;
+            long expected = -1;
+            try { expected = Long.parseLong(conn.getHeaderField("Content-Length")); } catch (Exception ignored) {}
             InputStream in = conn.getInputStream();
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int n;
             while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
             in.close();
-            return bos.toByteArray();
+            byte[] data = bos.toByteArray();
+            // A truncated download produces a corrupt APK and the installer then
+            // reports a useless "problem parsing the package" — reject it here.
+            if (expected > 0 && data.length != expected) return null;
+            return data;
         } catch (Exception e) {
             return null;
         } finally {
             if (conn != null) conn.disconnect();
         }
+    }
+
+    /** Cheap sanity check: an APK is a ZIP, so it must start with "PK\003\004". */
+    private boolean looksLikeApk(byte[] b) {
+        return b != null && b.length > 100000
+                && b[0] == 0x50 && b[1] == 0x4B && b[2] == 0x03 && b[3] == 0x04;
+    }
+
+    /** SHA-256 of an APK file's signing certificate, or null if it can't be read. */
+    @SuppressWarnings("deprecation")
+    private String archiveSignature(String archivePath) {
+        try {
+            PackageManager pm = getPackageManager();
+            android.content.pm.Signature[] sigs;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo pi = pm.getPackageArchiveInfo(archivePath, PackageManager.GET_SIGNING_CERTIFICATES);
+                if (pi == null || pi.signingInfo == null) return null;
+                sigs = pi.signingInfo.getApkContentsSigners();
+            } else {
+                PackageInfo pi = pm.getPackageArchiveInfo(archivePath, PackageManager.GET_SIGNATURES);
+                if (pi == null) return null;
+                sigs = pi.signatures;
+            }
+            return digestOf(sigs);
+        } catch (Exception e) { return null; }
+    }
+
+    /** SHA-256 of the currently installed app's signing certificate. */
+    @SuppressWarnings("deprecation")
+    private String installedSignature() {
+        try {
+            PackageManager pm = getPackageManager();
+            android.content.pm.Signature[] sigs;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo pi = pm.getPackageInfo(getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+                if (pi.signingInfo == null) return null;
+                sigs = pi.signingInfo.getApkContentsSigners();
+            } else {
+                PackageInfo pi = pm.getPackageInfo(getPackageName(), PackageManager.GET_SIGNATURES);
+                sigs = pi.signatures;
+            }
+            return digestOf(sigs);
+        } catch (Exception e) { return null; }
+    }
+
+    private String digestOf(android.content.pm.Signature[] sigs) {
+        try {
+            if (sigs == null || sigs.length == 0) return null;
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(sigs[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (byte x : d) sb.append(String.format("%02x", x));
+            return sb.toString();
+        } catch (Exception e) { return null; }
     }
 
     private void deleteDir(File dir) {
@@ -359,17 +428,50 @@ public class MainActivity extends Activity {
             if (remote <= currentVersionCode() || apkUrl.isEmpty()) return; // already up to date
 
             byte[] apk = httpGetBytes(apkUrl);
-            if (apk == null || apk.length < 10000) return;
+            if (!looksLikeApk(apk)) return;   // partial download or an HTML error page
             File dir = new File(getCacheDir(), "updates");
             deleteDir(dir); dir.mkdirs();
             final File out = new File(dir, "BrainArcade-update.apk");
             FileOutputStream fos = new FileOutputStream(out);
             fos.write(apk); fos.close();
 
+            // Make sure the file really is a Brain Arcade package before handing it
+            // to the installer — otherwise the user just sees "problem parsing the
+            // package" with no idea why.
+            PackageInfo pkg = getPackageManager().getPackageArchiveInfo(out.getAbsolutePath(), 0);
+            if (pkg == null || !getPackageName().equals(pkg.packageName)) {
+                deleteDir(dir);
+                return;
+            }
+
+            // The usual cause of "App not installed" / "package conflicts with an
+            // existing package": the update is signed with a different key than the
+            // copy already on the device. Detect it and say so plainly.
+            String mine = installedSignature(), theirs = archiveSignature(out.getAbsolutePath());
+            final boolean signatureClash = mine != null && theirs != null && !mine.equals(theirs);
+
             final String vn = info.optString("versionName", "");
-            runOnUiThread(new Runnable() { public void run() { promptInstall(out, vn); } });
+            runOnUiThread(new Runnable() { public void run() {
+                if (signatureClash) warnSignatureClash(vn);
+                else promptInstall(out, vn);
+            } });
         } catch (Exception ignored) {
         }
+    }
+
+    /**
+     * Tell the user why Android will refuse this update, instead of letting them
+     * hit the installer's opaque "App not installed" message.
+     */
+    private void warnSignatureClash(String versionName) {
+        if (webView == null) return;
+        String msg = "Update " + versionName + " was built with a different signing key than the copy "
+                + "installed on this device, so Android will not install it over the top. "
+                + "Uninstall Brain Arcade once, then install the new version — after that, "
+                + "updates will work normally.";
+        webView.evaluateJavascript(
+                "window.BrainGames && window.BrainGames.updateBlocked && window.BrainGames.updateBlocked("
+                        + JSONObject.quote(msg) + ");", null);
     }
 
     private void promptInstall(File apk, String versionName) {

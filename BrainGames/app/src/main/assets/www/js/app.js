@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.3";
+    var VERSION = "1.7.4";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -999,8 +999,22 @@
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", function () { lastW = -999; onResize(); });
 
-    /* ---------- update hook (called from native) ---------- */
+    /* ---------- update hooks (called from native) ---------- */
     function onUpdate(version) { toast("&#10024; Updated to v" + version + " — enjoy the new games!"); Sound.good(); }
+
+    // Android refused the update (almost always a signing-key mismatch). Explain it
+    // properly rather than leaving the user with "App not installed".
+    function updateBlocked(reason) {
+        if (load("updateBlockedSeen", null) === reason) return; // don't nag every launch
+        save("updateBlockedSeen", reason);
+        overlay({
+            emoji: "&#9888;&#65039;",
+            title: "Update needs a fresh install",
+            sub: esc(reason || "Android could not install this update over the existing app."),
+            buttons: [{ label: "Got it", primary: true }]
+        });
+        Sound.bad();
+    }
 
     /* ---------- battery (top-left) ---------- */
     var batteryEl = null;
@@ -1060,6 +1074,6 @@
 
     window.BrainGames = {
         register: register, boot: boot, handleBack: handleBack, toast: toast, go: go,
-        openSettings: openSettings, onUpdate: onUpdate, version: VERSION
+        openSettings: openSettings, onUpdate: onUpdate, updateBlocked: updateBlocked, version: VERSION
     };
 })();

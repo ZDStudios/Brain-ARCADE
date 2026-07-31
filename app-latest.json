@@ -1,6 +1,6 @@
 {
-  "versionCode": 9,
-  "versionName": "1.7.3",
+  "versionCode": 10,
+  "versionName": "1.7.4",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Fixes kiosk + Home app: 'Set as Home app' now actually works (it was never listed, and a pinned kiosk could not open Settings), and leaving kiosk no longer breaks the Home button."
+  "notes": "Fixes app updates failing with 'App not installed' / 'package conflict'. Every build is now signed with the same key, so updates install over the top from here on. Install this one after uninstalling the old app, once."
 }

@@ -26,6 +26,18 @@ On WiFi it checks [`www/manifest.json`](www/manifest.json); if the `version` cha
 it downloads the new files and swaps them in — no reinstall. To ship an update: edit
 files under `www/`, bump `version` in `manifest.json`, and push to `main`.
 
+## 🔑 App signing (why updates work)
+Every APK is signed with the fixed key in
+[`BrainGames/keystore/`](BrainGames/keystore). Android refuses to install an
+update signed by a different key — that is the "App not installed" / "package
+conflicts with an existing package" error. CI runners are wiped between builds,
+so before this key existed each build was signed with a fresh random debug key
+and updates always failed. The keystore is committed on purpose: it is a build
+key for a side-loaded personal app, not a Play Store upload key. To rotate it,
+replace the file and update `signingConfigs.arcade` in
+[`BrainGames/app/build.gradle`](BrainGames/app/build.gradle) — every device then
+needs one manual uninstall + reinstall.
+
 ## 🔒 Kiosk mode (built in)
 Kiosk mode is part of the app now — the old separate `KioskLock.apk` is no longer
 needed. Turn it on in **Settings → Kiosk mode (PIN 2580)**, or remotely from the
