@@ -54,7 +54,7 @@
     a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
 
     /* ===== Remote-control modal ===== */
-    .modal { position:fixed; inset:0; background:rgba(4,7,18,.94); z-index:50; display:flex; flex-direction:column; align-items:center; padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)); }
+    .modal { position:fixed; inset:0; background:#070B16; z-index:50; display:flex; flex-direction:column; align-items:center; padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)); }
     .modal .mhead { display:flex; align-items:center; gap:10px; width:100%; max-width:520px; margin-bottom:12px; }
     .modal .mhead .name { font-size:16px; }
     .modal .screen-wrap { position:relative; flex:1; width:100%; max-width:520px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -63,6 +63,27 @@
     .tapdot { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%; border:3px solid var(--accent2); pointer-events:none; animation:tapfade .5s ease-out forwards; }
     @keyframes tapfade { from{transform:scale(.4);opacity:1;} to{transform:scale(1.4);opacity:0;} }
     .modal .mhint { color:var(--muted); font-size:12px; margin-top:10px; text-align:center; max-width:520px; }
+
+    /* ===== Scores & stats modal ===== */
+    .sc-wrap { width:100%; max-width:760px; overflow-y:auto; flex:1; }
+    .sc-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px; }
+    .sc-tile { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 10px; text-align:center; }
+    .sc-tile .sv { font-size:20px; font-weight:800; }
+    .sc-tile .sk { font-size:11px; color:var(--muted); margin-top:3px; }
+    .sc-sort { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; color:var(--muted); font-size:13px; }
+    .chip { border:1px solid var(--line); background:var(--card2); color:var(--muted); border-radius:20px;
+            padding:7px 13px; font-size:13px; font-weight:700; cursor:pointer; }
+    .chip.on { background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#fff; border-color:transparent; }
+    .sc-tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:14px; }
+    .sc-table { width:100%; border-collapse:collapse; font-size:14px; min-width:460px; }
+    .sc-table th { text-align:left; padding:11px 12px; font-size:11.5px; text-transform:uppercase;
+                   letter-spacing:.6px; color:var(--muted); border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card); }
+    .sc-table td { padding:11px 12px; border-bottom:1px solid var(--line); }
+    .sc-table tr:last-child td { border-bottom:none; }
+    .sc-table td.g { font-weight:700; }
+    .sc-table td.b { font-weight:800; }
+    .sc-table .dim { color:var(--muted); }
+    @media (max-width:600px) { .sc-tiles { grid-template-columns:repeat(2,1fr); } }
 
     /* ===== Phone layout ===== */
     @media (max-width:600px) {
@@ -154,6 +175,7 @@ function render(devices){
                 '<button class="btn primary" data-save="'+d.id+'">Save changes</button>'+
             '</div>'+
             '<div class="row">'+
+                '<button class="btn" data-scores="'+d.id+'">&#128202; Scores &amp; stats</button>'+
                 '<button class="btn'+(d.kiosk?' active':'')+'" data-kiosk="'+d.id+'" data-on="'+(d.kiosk?'0':'1')+'">'+(d.kiosk?'&#128275; Exit kiosk':'&#128274; Kiosk mode')+'</button>'+
                 '<button class="btn" data-msg="'+d.id+'">&#128172; Send message</button>'+
                 '<button class="btn" data-remote="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128241; Remote control</button>'+
@@ -188,6 +210,7 @@ function wire(){
         fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"popup",text:text.trim()})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent="Sent ✓"; setTimeout(function(){b.innerHTML="&#128172; Send message";},1500); }); }; });
     document.querySelectorAll("[data-remote]").forEach(function(b){ b.onclick=function(){ if(b.disabled) return; openRemote(b.getAttribute("data-remote")); }; });
+    document.querySelectorAll("[data-scores]").forEach(function(b){ b.onclick=function(){ openScores(b.getAttribute("data-scores")); }; });
     document.querySelectorAll("[data-kiosk]").forEach(function(b){ b.onclick=function(){
         var id=b.getAttribute("data-kiosk"), on=b.getAttribute("data-on")==="1";
         var d=lastDevices.filter(function(x){return x.id===id;})[0];
@@ -215,6 +238,67 @@ function poll(fromDraft){
     if(fromDraft){ render(lastDevices); return; }
     fetch("/api/devices").then(function(r){return r.json();}).then(function(data){ lastDevices=data.devices; render(data.devices); }).catch(function(){});
 }
+/* ===== Scores & stats ===== */
+function fmtMs(ms){ var s=Math.round((ms||0)/1000); if(s<60)return s+'s'; var m=Math.floor(s/60); if(m<60)return m+'m'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
+function fmtAgo(ts){ if(!ts)return 'never'; var d=Math.round((Date.now()-ts)/60000); if(d<1)return 'just now'; if(d<60)return d+'m ago'; if(d<1440)return Math.round(d/60)+'h ago'; return Math.round(d/1440)+'d ago'; }
+var scoreSort = 'plays';
+function openScores(id){
+    fetch('/api/scores?deviceId='+encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){
+        if(d.error){ alert('No data for that device yet.'); return; }
+        var m=document.createElement('div'); m.className='modal'; m.id='scoresModal';
+        document.body.appendChild(m);
+        renderScores(m, d);
+    }).catch(function(){ alert('Could not load scores.'); });
+}
+function renderScores(m, d){
+    var s = d.summary || {};
+    var rows = (d.games||[]).slice();
+    rows.sort(function(a,b){
+        if(scoreSort==='plays') return (b.plays-a.plays) || a.name.localeCompare(b.name);
+        if(scoreSort==='time')  return (b.ms-a.ms) || a.name.localeCompare(b.name);
+        if(scoreSort==='recent')return (b.last-a.last) || a.name.localeCompare(b.name);
+        return a.name.localeCompare(b.name);
+    });
+    var played = rows.filter(function(r){ return r.plays>0 || r.best!=null; }).length;
+    var tiles =
+        tile(s.plays!=null? s.plays : rows.reduce(function(n,r){return n+r.plays;},0), 'games played')+
+        tile(fmtMs(s.timeMs!=null? s.timeMs : rows.reduce(function(n,r){return n+r.ms;},0)), 'time played')+
+        tile((s.tried!=null? s.tried : played)+'/'+rows.length, 'games tried')+
+        tile(s.streak!=null? s.streak : '—', 'day streak')+
+        tile((s.achievements!=null? s.achievements+'/'+s.achievementsTotal : '—'), 'achievements')+
+        tile(s.limitMin? fmtMs(s.todayMs||0)+' / '+s.limitMin+'m' : fmtMs(s.todayMs||0), 'today');
+    var body = rows.map(function(r){
+        var lower = r.mode==='low';
+        return '<tr>'+
+            '<td class="g">'+esc(r.name)+'</td>'+
+            '<td class="b">'+(r.best==null?'<span class="dim">—</span>':esc(String(r.best))+esc(r.suffix||'')+(lower?' <span class="dim">&darr;</span>':''))+'</td>'+
+            '<td>'+r.plays+'</td>'+
+            '<td>'+fmtMs(r.ms)+'</td>'+
+            '<td class="dim">'+fmtAgo(r.last)+'</td>'+
+        '</tr>';
+    }).join('') || '<tr><td colspan="5" class="dim">No games reported yet.</td></tr>';
+    m.innerHTML =
+        '<div class="mhead">'+
+            '<span class="name">&#128202; '+esc(d.name||'Tablet')+'</span>'+
+            '<span class="spacer"></span>'+
+            '<button class="btn primary" id="sc-close">Close</button>'+
+        '</div>'+
+        '<div class="sc-wrap">'+
+            '<div class="sc-tiles">'+tiles+'</div>'+
+            '<div class="sc-sort">Sort: '+
+                sortBtn('plays','Most played')+sortBtn('time','Most time')+sortBtn('recent','Recent')+sortBtn('name','A–Z')+
+            '</div>'+
+            '<div class="sc-tablewrap"><table class="sc-table">'+
+                '<thead><tr><th>Game</th><th>Best</th><th>Plays</th><th>Time</th><th>Last</th></tr></thead>'+
+                '<tbody>'+body+'</tbody></table></div>'+
+            '<div class="mini" style="margin-top:10px">&darr; means a lower score is better (time or moves).</div>'+
+        '</div>';
+    document.getElementById('sc-close').onclick=function(){ if(m.parentNode) m.parentNode.removeChild(m); };
+    m.querySelectorAll('[data-sort]').forEach(function(b){ b.onclick=function(){ scoreSort=b.getAttribute('data-sort'); renderScores(m,d); }; });
+    function sortBtn(k,label){ return '<button class="chip'+(scoreSort===k?' on':'')+'" data-sort="'+k+'">'+label+'</button>'; }
+}
+function tile(v,k){ return '<div class="sc-tile"><div class="sv">'+esc(String(v))+'</div><div class="sk">'+esc(k)+'</div></div>'; }
+
 /* ===== Remote control: live view + tap replay ===== */
 var remote = null; // { id, frameTimer, modal }
 function openRemote(id){

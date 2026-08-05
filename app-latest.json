@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.7.4",
+  "versionCode": 11,
+  "versionName": "1.8.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Fixes app updates failing with 'App not installed' / 'package conflict'. Every build is now signed with the same key, so updates install over the top from here on. Install this one after uninstalling the old app, once."
+  "notes": "New game: Bubble Popper (maths). Plus daily challenge + streaks, achievements, a My Stats screen, favourite games, a daily play-time limit, and full high scores & play stats for every game on the admin dashboard."
 }

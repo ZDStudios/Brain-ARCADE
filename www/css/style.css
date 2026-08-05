@@ -487,3 +487,78 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 :root.tv .game-host .btn-row { gap: 8px; }
 /* The on-screen D-pad is redundant on a TV — the remote already has one. */
 :root.tv .game-host .pad { display: none; }
+
+/* ===== Bubble Popper ===== */
+.bp-question { text-align:center; font-size:30px; font-weight:800; letter-spacing:1px; margin-bottom:8px; color:var(--text); }
+.bp-field { position:relative; width:100%; overflow:hidden; border-radius:14px;
+    background:linear-gradient(180deg,#0d1b3a,#0b1020); border:1px solid var(--line); }
+.bp-bubble { position:absolute; top:0; left:0; border:none; border-radius:50%; color:#08111f;
+    font-weight:800; font-size:20px; cursor:pointer; padding:0;
+    box-shadow:0 6px 18px rgba(0,0,0,.4), inset 0 -4px 10px rgba(0,0,0,.18);
+    will-change:transform; }
+.bp-bubble:active { filter:brightness(1.15); }
+.bp-bubble.sel { outline:4px solid #fff; outline-offset:3px; }
+.bp-burst { position:absolute; transform:translate(-50%,-50%); font-size:30px; pointer-events:none;
+    animation:bpBurst .48s ease-out forwards; }
+@keyframes bpBurst { from { transform:translate(-50%,-50%) scale(.5); opacity:1; }
+                     to   { transform:translate(-50%,-50%) scale(1.7); opacity:0; } }
+:root.tv .bp-question { font-size:40px; }
+:root.tv .bp-bubble { font-size:26px; }
+
+/* ===== Hero actions + time left ===== */
+.hero-actions { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+.hero-actions .btn { min-height:40px; padding:9px 16px; font-size:14px; }
+.time-left { font-size:13px; color:var(--text); background:rgba(0,0,0,.25); border:1px solid var(--line);
+    padding:7px 11px; border-radius:20px; font-weight:700; }
+
+/* ===== Daily challenge ===== */
+.daily-card { display:flex; align-items:center; gap:14px; padding:14px 16px; margin:0 2px 4px;
+    border-radius:var(--radius); border:1px solid var(--line); box-shadow:var(--shadow);
+    background:linear-gradient(135deg,rgba(251,191,36,.22),rgba(124,92,255,.20)); }
+.daily-card.done { background:linear-gradient(135deg,rgba(52,211,153,.20),rgba(34,211,238,.16)); }
+.daily-ico { font-size:34px; flex:0 0 auto; }
+.daily-main { flex:1; min-width:0; }
+.daily-label { font-size:11.5px; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.daily-name { font-weight:800; font-size:18px; margin-top:1px; }
+.daily-streak { font-size:12.5px; color:var(--muted); margin-top:2px; }
+.daily-card .btn { min-height:42px; padding:10px 18px; flex:0 0 auto; }
+
+/* ===== Favourite star on cards ===== */
+.fav-btn { position:absolute; top:8px; right:8px; z-index:4; width:34px; height:34px; border-radius:50%;
+    border:none; background:rgba(0,0,0,.35); color:#fff; font-size:17px; line-height:1; cursor:pointer;
+    display:grid; place-items:center; padding:0; }
+.fav-btn.on { background:rgba(0,0,0,.5); }
+.fav-btn:active { transform:scale(.88); }
+
+/* ===== Stats screen ===== */
+.stat-tiles { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+@media (min-width:560px) { .stat-tiles { grid-template-columns:repeat(4,1fr); } }
+.stat-tile { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; text-align:center; box-shadow:var(--shadow); }
+.stat-tile .st-v { font-size:24px; font-weight:800; }
+.stat-tile .st-k { font-size:11.5px; color:var(--muted); margin-top:3px; }
+
+.achv-grid { display:grid; grid-template-columns:1fr; gap:8px; }
+@media (min-width:560px) { .achv-grid { grid-template-columns:1fr 1fr; } }
+.achv { display:flex; align-items:center; gap:12px; background:var(--card-2); border:1px solid var(--line);
+    border-radius:12px; padding:10px 12px; opacity:.55; }
+.achv.got { opacity:1; border-color:var(--accent); background:var(--card); }
+.achv-ico { font-size:24px; width:32px; text-align:center; flex:0 0 auto; }
+.achv-name { font-weight:700; font-size:14.5px; }
+.achv-desc { font-size:12px; color:var(--muted); }
+
+.score-list { display:flex; flex-direction:column; gap:8px; }
+.score-row { display:flex; align-items:center; gap:12px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:10px 12px; }
+.sr-ico { width:40px; height:40px; border-radius:11px; display:grid; place-items:center; font-size:21px; flex:0 0 auto; color:#fff; }
+.sr-main { flex:1; min-width:0; }
+.sr-name { font-weight:700; font-size:15px; }
+.sr-sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+.sr-best { text-align:right; flex:0 0 auto; }
+.sr-bv { font-weight:800; font-size:17px; }
+.sr-bk { font-size:10.5px; color:var(--muted); }
+
+:root.tv .stat-tile .st-v { font-size:32px; }
+:root.tv .stat-tile .st-k { font-size:15px; }
+:root.tv .daily-name { font-size:24px; }
+:root.tv .sr-name { font-size:19px; }
+:root.tv .fav-btn { width:46px; height:46px; font-size:22px; }

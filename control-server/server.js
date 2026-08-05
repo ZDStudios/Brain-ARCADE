@@ -68,7 +68,9 @@ const server = http.createServer(async function (req, res) {
         devices[b.deviceId] = {
             id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(),
             battery: bat, games: games, canStream: !!b.canStream,
-            canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv
+            canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv,
+            stats: (b.stats && typeof b.stats === "object") ? b.stats : (prev.stats || null),
+            summary: (b.summary && typeof b.summary === "object") ? b.summary : (prev.summary || null)
         };
         const pol = policies[b.deviceId] || defaultPolicy();
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
@@ -95,6 +97,39 @@ const server = http.createServer(async function (req, res) {
             input: taps,
             scoresBackup: scores[b.deviceId] || null
         });
+    }
+
+    // Full high-score + play-stats report for one device (or every device).
+    if (p === "/api/scores" && req.method === "GET") {
+        const id = u.searchParams.get("deviceId");
+        const build = function (d) {
+            const meta = {};
+            (d.games || []).forEach(function (g) { meta[g.id] = g; });
+            const best = scores[d.id] || {};
+            const st = d.stats || {};
+            const ids = Object.keys(meta).length ? Object.keys(meta)
+                : Array.from(new Set(Object.keys(best).concat(Object.keys(st))));
+            return {
+                id: d.id, name: d.name, online: (Date.now() - d.lastSeen) < ONLINE_MS,
+                summary: d.summary || null,
+                games: ids.map(function (gid) {
+                    const m = meta[gid] || {};
+                    const s = st[gid] || {};
+                    return {
+                        id: gid, name: m.name || gid,
+                        mode: m.mode || "high", suffix: m.suffix || "", label: m.label || "Best",
+                        best: (gid in best) ? best[gid] : null,
+                        plays: s.plays || 0, ms: s.ms || 0, last: s.last || 0
+                    };
+                })
+            };
+        };
+        if (id) {
+            const d = devices[id];
+            if (!d) return send(res, 404, { error: "unknown device" });
+            return send(res, 200, build(d));
+        }
+        return send(res, 200, { devices: Object.keys(devices).map(function (k) { return build(devices[k]); }) });
     }
 
     if (p === "/api/devices" && req.method === "GET") {

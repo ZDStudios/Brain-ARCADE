@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.4";
+    var VERSION = "1.8.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -196,7 +196,10 @@
     }
     function focusEl(e) {
         if (!e) return;
-        if (navFocused && navFocused !== e) navFocused.classList.remove("nav-focus");
+        // Clear every stale marker, not just the last one we set — a re-render can
+        // otherwise leave two elements looking selected.
+        var old = document.querySelectorAll(".nav-focus");
+        for (var i = 0; i < old.length; i++) if (old[i] !== e) old[i].classList.remove("nav-focus");
         navFocused = e;
         e.classList.add("nav-focus");
         try { e.focus({ preventScroll: true }); } catch (err) { try { e.focus(); } catch (e2) {} }
@@ -205,10 +208,17 @@
     function focusFirst() {
         var list = navCandidates();
         if (!list.length) return false;
-        // Prefer the first real content control over the top-bar icons.
-        var pick = list[0];
-        for (var i = 0; i < list.length; i++) {
-            if (!list[i].classList.contains("icon-btn")) { pick = list[i]; break; }
+        // A game card is the most useful landing spot; otherwise the first real
+        // control, and only then the top-bar icons.
+        var pick = null, i;
+        for (i = 0; i < list.length; i++) {
+            if (list[i].classList.contains("game-card")) { pick = list[i]; break; }
+        }
+        if (!pick) {
+            pick = list[0];
+            for (i = 0; i < list.length; i++) {
+                if (!list[i].classList.contains("icon-btn")) { pick = list[i]; break; }
+            }
         }
         focusEl(pick);
         return true;
@@ -284,6 +294,202 @@
             });
             obs.observe(document.body, { childList: true, subtree: true });
         } catch (e) {}
+    }
+
+    /* ============================================================
+       Play stats — how often and how long each game gets played.
+       Feeds the in-app Stats screen and the admin dashboard.
+       ============================================================ */
+    var stats = load("stats", {});          // id -> { plays, ms, last }
+    function statFor(id) {
+        var s = stats[id];
+        if (!s) { s = stats[id] = { plays: 0, ms: 0, last: 0 }; }
+        if (typeof s.plays !== "number") s.plays = 0;
+        if (typeof s.ms !== "number") s.ms = 0;
+        return s;
+    }
+    function notePlayStart(id) { var s = statFor(id); s.plays++; s.last = Date.now(); save("stats", stats); }
+    function notePlayTime(id, ms) {
+        if (!id || !(ms > 0)) return;
+        var s = statFor(id); s.ms += ms; s.last = Date.now();
+        save("stats", stats); addScreenTime(ms);
+    }
+    function totalPlays() { var n = 0; for (var k in stats) n += stats[k].plays || 0; return n; }
+    function totalTimeMs() { var n = 0; for (var k in stats) n += stats[k].ms || 0; return n; }
+    function fmtDuration(ms) {
+        var s = Math.round((ms || 0) / 1000);
+        if (s < 60) return s + "s";
+        var m = Math.floor(s / 60);
+        if (m < 60) return m + "m";
+        return Math.floor(m / 60) + "h " + (m % 60) + "m";
+    }
+    function fmtWhen(ts) {
+        if (!ts) return "never";
+        var d = Math.round((Date.now() - ts) / 60000);
+        if (d < 1) return "just now";
+        if (d < 60) return d + "m ago";
+        if (d < 1440) return Math.round(d / 60) + "h ago";
+        return Math.round(d / 1440) + "d ago";
+    }
+
+    /* ============================================================
+       Feature: daily screen-time limit (parent-set, offline)
+       ============================================================ */
+    function todayKey() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+    var screenTime = load("screenTime", null);
+    if (!screenTime || screenTime.day !== todayKey()) { screenTime = { day: todayKey(), ms: 0 }; save("screenTime", screenTime); }
+    function limitMin() { return settings.dailyLimitMin || 0; }
+    function addScreenTime(ms) {
+        if (screenTime.day !== todayKey()) screenTime = { day: todayKey(), ms: 0 };
+        screenTime.ms += ms; save("screenTime", screenTime);
+        enforceLimit();
+    }
+    function limitReached() { return limitMin() > 0 && screenTime.day === todayKey() && screenTime.ms >= limitMin() * 60000; }
+    function minutesLeft() { return Math.max(0, Math.ceil((limitMin() * 60000 - screenTime.ms) / 60000)); }
+    function renderTimeUp() {
+        if (document.getElementById("timeUpScreen")) return;
+        var ls = el("div", { id: "timeUpScreen", class: "lock-screen fade-in" }, [
+            el("div", { class: "lock-inner" }, [
+                el("div", { class: "lock-ico", html: "&#9203;" }),
+                el("h2", { text: "Time's up for today!" }),
+                el("p", { text: "You've played your " + limitMin() + " minutes. Come back tomorrow for more games." })
+            ])
+        ]);
+        document.body.appendChild(ls);
+    }
+    function removeTimeUp() { var e = document.getElementById("timeUpScreen"); if (e) e.remove(); }
+    function enforceLimit() {
+        if (limitReached()) {
+            if (route === "game") { teardown(); renderHome(); }
+            renderTimeUp();
+        } else removeTimeUp();
+    }
+
+    /* ============================================================
+       Play stats — how often and how long each game gets played.
+       Feeds the in-app Stats screen and the admin dashboard.
+       ============================================================ */
+    var stats = load("stats", {});          // id -> { plays, ms, last }
+    function statFor(id) {
+        var s = stats[id];
+        if (!s) { s = stats[id] = { plays: 0, ms: 0, last: 0 }; }
+        if (typeof s.plays !== "number") s.plays = 0;
+        if (typeof s.ms !== "number") s.ms = 0;
+        return s;
+    }
+    function notePlayStart(id) { var s = statFor(id); s.plays++; s.last = Date.now(); save("stats", stats); }
+    function notePlayTime(id, ms) {
+        if (!id || !(ms > 0)) return;
+        var s = statFor(id); s.ms += ms; s.last = Date.now();
+        save("stats", stats); addScreenTime(ms);
+    }
+    function totalPlays() { var n = 0; for (var k in stats) n += stats[k].plays || 0; return n; }
+    function totalTimeMs() { var n = 0; for (var k in stats) n += stats[k].ms || 0; return n; }
+    function gamesTried() { var n = 0; for (var k in stats) if ((stats[k].plays || 0) > 0) n++; return n; }
+    function fmtDuration(ms) {
+        var s = Math.round((ms || 0) / 1000);
+        if (s < 60) return s + "s";
+        var m = Math.floor(s / 60);
+        if (m < 60) return m + "m";
+        return Math.floor(m / 60) + "h " + (m % 60) + "m";
+    }
+    function fmtWhen(ts) {
+        if (!ts) return "never";
+        var d = Math.round((Date.now() - ts) / 60000);
+        if (d < 1) return "just now";
+        if (d < 60) return d + "m ago";
+        if (d < 1440) return Math.round(d / 60) + "h ago";
+        return Math.round(d / 1440) + "d ago";
+    }
+    // Accrue play time while a game is open so limits apply live, not only on exit.
+    var playStartedAt = 0, playingId = null;
+    function beginTiming(id) { playingId = id; playStartedAt = Date.now(); }
+    function flushTiming() {
+        if (!playingId || !playStartedAt) return;
+        var ms = Date.now() - playStartedAt;
+        playStartedAt = Date.now();
+        if (ms > 500) notePlayTime(playingId, ms);
+    }
+    function endTiming() { flushTiming(); playingId = null; playStartedAt = 0; }
+    setInterval(function () { if (route === "game") flushTiming(); }, 15000);
+
+    /* ============================================================
+       Feature: favourites — star a game to pin it to the top
+       ============================================================ */
+    function favs() { return Array.isArray(settings.favs) ? settings.favs : (settings.favs = []); }
+    function isFav(id) { return favs().indexOf(id) > -1; }
+    function toggleFav(id) {
+        var f = favs().slice(), i = f.indexOf(id);
+        if (i > -1) f.splice(i, 1); else f.push(id);
+        settings.favs = f; save("settings", settings);
+        Sound.click(); haptic(10);
+    }
+
+    /* ============================================================
+       Feature: daily challenge — one picked game a day, with a streak
+       ============================================================ */
+    var daily = load("daily", { day: "", id: "", done: false, streak: 0, best: 0 });
+    function dailySeed() { var t = todayKey(), h = 0; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return h; }
+    function dailyGame() {
+        var list = GAMES.filter(function (g) { return allowed(g.id); });
+        if (!list.length) return null;
+        return list[dailySeed() % list.length];
+    }
+    function refreshDaily() {
+        if (daily.day !== todayKey()) {
+            var g = dailyGame();
+            // Missing a day resets the streak.
+            var yest = new Date(Date.now() - 86400000);
+            var yKey = yest.getFullYear() + "-" + (yest.getMonth() + 1) + "-" + yest.getDate();
+            if (daily.day && daily.day !== yKey) daily.streak = 0;
+            else if (daily.day === yKey && !daily.done) daily.streak = 0;
+            daily = { day: todayKey(), id: g ? g.id : "", done: false, streak: daily.streak || 0, best: daily.best || 0 };
+            save("daily", daily);
+        }
+        return daily;
+    }
+    function completeDaily(id) {
+        refreshDaily();
+        if (daily.done || daily.id !== id) return;
+        daily.done = true;
+        daily.streak = (daily.streak || 0) + 1;
+        if (daily.streak > (daily.best || 0)) daily.best = daily.streak;
+        save("daily", daily);
+        toast("&#127775; Daily challenge done! Streak: " + daily.streak);
+        Sound.win();
+        checkAchievements();
+        if (route === "home") renderHome();
+    }
+
+    /* ============================================================
+       Feature: achievements
+       ============================================================ */
+    var ACHIEVEMENTS = [
+        { id: "first",   emoji: "&#127918;", name: "First Play",     desc: "Play your first game",          test: function () { return totalPlays() >= 1; } },
+        { id: "ten",     emoji: "&#128293;", name: "Getting Warm",   desc: "Play 10 games",                 test: function () { return totalPlays() >= 10; } },
+        { id: "fifty",   emoji: "&#127941;", name: "Half Century",   desc: "Play 50 games",                 test: function () { return totalPlays() >= 50; } },
+        { id: "explore", emoji: "&#129517;", name: "Explorer",       desc: "Try 10 different games",        test: function () { return gamesTried() >= 10; } },
+        { id: "allgames",emoji: "&#127775;", name: "Completionist",  desc: "Try every game",                test: function () { return GAMES.length > 0 && gamesTried() >= GAMES.length; } },
+        { id: "hour",    emoji: "&#9201;",   name: "Hour of Power",  desc: "Play for one hour in total",    test: function () { return totalTimeMs() >= 3600000; } },
+        { id: "streak3", emoji: "&#128200;", name: "On a Roll",      desc: "3-day daily challenge streak",  test: function () { return (daily.streak || 0) >= 3; } },
+        { id: "bubble",  emoji: "&#129529;", name: "Bubble Brain",   desc: "Score 20+ in Bubble Popper",    test: function () { return (getBest("bubblepop") || 0) >= 20; } }
+    ];
+    function unlocked() { return load("achv", []); }
+    function isUnlocked(id) { return unlocked().indexOf(id) > -1; }
+    function checkAchievements() {
+        var have = unlocked(), fresh = [];
+        ACHIEVEMENTS.forEach(function (a) {
+            if (have.indexOf(a.id) > -1) return;
+            var ok = false; try { ok = !!a.test(); } catch (e) {}
+            if (ok) { have.push(a.id); fresh.push(a); }
+        });
+        if (fresh.length) {
+            save("achv", have);
+            fresh.forEach(function (a, i) {
+                setTimeout(function () { toast(a.emoji + " Achievement: <b>" + a.name + "</b>"); Sound.good(); }, i * 1400);
+            });
+        }
+        return fresh;
     }
 
     /* ---------- best scores ---------- */
@@ -475,12 +681,12 @@
         panel.appendChild(el("h2", { style: "text-align:center;margin-bottom:4px", text: "Manage games" }));
         panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 12px", text: "Tap to turn games on or off for the tablet." }));
         var list = el("div", { style: "overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px" });
-        function isOn(id) { var l = settings.localAllowed; return !l || l.indexOf(id) > -1; }
+        function isOn(id) { return localBlocked().indexOf(id) < 0; }
         function toggle(id) {
-            var l = settings.localAllowed ? settings.localAllowed.slice() : allGameIds();
+            var l = localBlocked().slice();
             var i = l.indexOf(id);
             if (i > -1) l.splice(i, 1); else l.push(id);
-            settings.localAllowed = (l.length === GAMES.length) ? null : l;
+            settings.localBlocked = l;
             save("settings", settings); Sound.click(); haptic(8);
         }
         GAMES.forEach(function (g) {
@@ -495,7 +701,7 @@
         });
         panel.appendChild(list);
         var btns = el("div", { class: "btn-row", style: "margin-top:14px" }, [
-            el("button", { class: "btn", text: "All on", onclick: function () { settings.localAllowed = null; save("settings", settings); Sound.good(); redraw(); } }),
+            el("button", { class: "btn", text: "All on", onclick: function () { settings.localBlocked = []; save("settings", settings); Sound.good(); redraw(); } }),
             el("button", { class: "btn primary", text: "Done", onclick: function () { close(); refreshPolicyUI(); } })
         ]);
         panel.appendChild(btns);
@@ -527,11 +733,38 @@
     var PIN = "2580";
     var policy = { locked: false, allowedGames: null }; // from server
     var serverGoverns = false;                          // true when online AND admin is restricting
-    if (settings.localAllowed === undefined) settings.localAllowed = null; // null = all games on
     var allGameIds = function () { return GAMES.map(function (g) { return g.id; }); };
+
+    // Local game switches are stored as a BLOCKED list, not an allowed list.
+    // With an allowed list, any game added in a later update was missing from it
+    // and silently disappeared on every tablet where a game had been switched off.
+    // Runs from boot(), once every game has registered — allGameIds() is empty
+    // before that.
+    // The games that existed before the blocked-list model. Only these can be
+    // carried over as "switched off" — anything newer simply did not exist when
+    // the parent made that choice, so it must not be hidden by it.
+    var PRE_BLOCKLIST_GAMES = [
+        "tetris", "blockblast", "g2048", "chess", "solitaire", "rushhour", "reversi", "mathblitz",
+        "stroop", "wordle", "snake", "memory", "mines", "sudoku", "simon", "ttt", "c4",
+        "breakout", "whack", "puzzle15", "flappy", "pong", "reaction", "fruitcatch"
+    ];
+    function migrateGameFilters() {
+        if (Array.isArray(settings.localBlocked)) return;
+        if (Array.isArray(settings.localAllowed)) {
+            var allowedIds = settings.localAllowed;
+            settings.localBlocked = PRE_BLOCKLIST_GAMES.filter(function (id) { return allowedIds.indexOf(id) < 0; });
+        } else {
+            settings.localBlocked = [];
+        }
+        delete settings.localAllowed;
+        save("settings", settings);
+    }
+    function localBlocked() { return Array.isArray(settings.localBlocked) ? settings.localBlocked : []; }
     function effAllowedList() {
         if (serverGoverns && policy.allowedGames) return policy.allowedGames;
-        return settings.localAllowed || null; // null = all
+        var blocked = localBlocked();
+        if (!blocked.length) return null; // null = all
+        return allGameIds().filter(function (id) { return blocked.indexOf(id) < 0; });
     }
     function effLocked() { return serverGoverns && policy.locked; }
     function allowed(id) { var l = effAllowedList(); return !l || l.indexOf(id) > -1; }
@@ -568,8 +801,16 @@
         var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
         var body = {
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
-            games: GAMES.map(function (g) { return { id: g.id, name: g.name }; }),
+            games: GAMES.map(function (g) {
+                return { id: g.id, name: g.name, mode: g.best || "high", suffix: g.bestSuffix || "", label: g.bestLabel || "Best" };
+            }),
             scores: currentScores(),
+            stats: stats,
+            summary: {
+                plays: totalPlays(), timeMs: totalTimeMs(), tried: gamesTried(),
+                streak: daily.streak || 0, achievements: unlocked().length, achievementsTotal: ACHIEVEMENTS.length,
+                todayMs: (screenTime.day === todayKey() ? screenTime.ms : 0), limitMin: limitMin()
+            },
             canStream: canCapture(),   // true only in the installed app (needs native screen capture)
             canKiosk: kioskSupported(),
             kiosk: kioskOn(),
@@ -704,8 +945,42 @@
             el("h1", { text: "Play. Think. Repeat." }),
             el("p", { text: list.length + " brain-teasing games in one arcade. Beat your best scores!" })
         ]);
+        var heroRow = el("div", { class: "hero-actions" });
+        heroRow.appendChild(el("button", { class: "btn", html: "&#128202; My stats",
+            onclick: function () { Sound.click(); haptic(8); go("stats"); } }));
+        if (limitMin() > 0) {
+            heroRow.appendChild(el("span", { class: "time-left", html: "&#9203; " + minutesLeft() + " min left today" }));
+        }
+        hero.appendChild(heroRow);
         view.appendChild(hero);
-        view.appendChild(el("div", { class: "section-label", text: "All Games" }));
+
+        // ---- Daily challenge ----
+        refreshDaily();
+        var dg = null;
+        for (var q = 0; q < list.length; q++) if (list[q].id === daily.id) dg = list[q];
+        if (!dg && list.length) { daily.id = dailyGame().id; save("daily", daily); for (q = 0; q < list.length; q++) if (list[q].id === daily.id) dg = list[q]; }
+        if (dg) {
+            var card = el("div", { class: "daily-card" + (daily.done ? " done" : "") }, [
+                el("div", { class: "daily-ico", html: dg.icon || "&#127918;" }),
+                el("div", { class: "daily-main" }, [
+                    el("div", { class: "daily-label", html: daily.done ? "&#9989; Daily challenge complete" : "&#11088; Today's challenge" }),
+                    el("div", { class: "daily-name", text: dg.name }),
+                    el("div", { class: "daily-streak", html: "&#128293; Streak: <b>" + (daily.streak || 0) + "</b>" +
+                        (daily.best ? " &middot; best " + daily.best : "") })
+                ]),
+                el("button", { class: "btn primary", text: daily.done ? "Play again" : "Play", onclick: function () { Sound.click(); openGame(dg); } })
+            ]);
+            view.appendChild(card);
+        }
+
+        // Favourites float to the top.
+        list = list.slice().sort(function (a, b) {
+            var fa = isFav(a.id) ? 0 : 1, fb = isFav(b.id) ? 0 : 1;
+            if (fa !== fb) return fa - fb;
+            return GAMES.indexOf(a) - GAMES.indexOf(b);
+        });
+
+        view.appendChild(el("div", { class: "section-label", text: favs().length ? "Favourites first" : "All Games" }));
         var grid = el("div", { class: "grid" });
         list.forEach(function (def, i) {
             var best = getBest(def.id);
@@ -720,6 +995,10 @@
                     el("div", { class: "best", text: bestStr })
                 ])
             ]);
+            var star = el("button", { class: "fav-btn" + (isFav(def.id) ? " on" : ""), html: isFav(def.id) ? "&#11088;" : "&#9734;",
+                "aria-label": "Favourite" });
+            star.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFav(def.id); renderHome(); });
+            card.appendChild(star);
             card.addEventListener("click", function () { Sound.click(); haptic(12); openGame(def); });
             grid.appendChild(card);
         });
@@ -742,6 +1021,7 @@
 
     function openGame(def) {
         if (effLocked()) return;
+        if (limitReached()) { renderTimeUp(); return; }
         if (!allowed(def.id)) { toast("This game is turned off"); return; }
         route = "game"; routeArg = def;
         fitExtra = 0; fitAttempts = 0;   // each game gets its own fit budget
@@ -807,6 +1087,8 @@
         var cleanup = null;
         try { cleanup = def.mount(host, api); } catch (e) { toast("Game failed to load"); console.error(e); }
         current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null, difficulty: difficulty };
+        notePlayStart(def.id);
+        beginTiming(def.id);
         showHelpFab(def);
         animateView(); window.scrollTo(0, 0);
         // On a TV nobody wants to scroll with a remote: if the game came out
@@ -823,6 +1105,64 @@
         fitExtra += over + 16;
         if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
         launchGame(def, difficulty, resumeState);
+    }
+
+    /* ---------- Stats & achievements screen ---------- */
+    function renderStats() {
+        route = "stats"; routeArg = null;
+        clearOverlays(); removeHelpFab();
+        document.getElementById("backBtn").hidden = false;
+        view.innerHTML = "";
+        var wrap = el("div");
+
+        wrap.appendChild(el("div", { class: "section-label", text: "Your totals" }));
+        var tiles = el("div", { class: "stat-tiles" }, [
+            el("div", { class: "stat-tile" }, [ el("div", { class: "st-v", text: String(totalPlays()) }), el("div", { class: "st-k", text: "games played" }) ]),
+            el("div", { class: "stat-tile" }, [ el("div", { class: "st-v", text: fmtDuration(totalTimeMs()) }), el("div", { class: "st-k", text: "time played" }) ]),
+            el("div", { class: "stat-tile" }, [ el("div", { class: "st-v", text: gamesTried() + "/" + GAMES.length }), el("div", { class: "st-k", text: "games tried" }) ]),
+            el("div", { class: "stat-tile" }, [ el("div", { class: "st-v", text: String(daily.streak || 0) }), el("div", { class: "st-k", text: "day streak" }) ])
+        ]);
+        wrap.appendChild(tiles);
+
+        wrap.appendChild(el("div", { class: "section-label", text: "Achievements" }));
+        var ach = el("div", { class: "achv-grid" });
+        ACHIEVEMENTS.forEach(function (a) {
+            var got = isUnlocked(a.id);
+            ach.appendChild(el("div", { class: "achv" + (got ? " got" : "") }, [
+                el("div", { class: "achv-ico", html: got ? a.emoji : "&#128274;" }),
+                el("div", { class: "achv-txt" }, [
+                    el("div", { class: "achv-name", text: a.name }),
+                    el("div", { class: "achv-desc", text: a.desc })
+                ])
+            ]));
+        });
+        wrap.appendChild(ach);
+
+        wrap.appendChild(el("div", { class: "section-label", text: "High scores" }));
+        var rows = GAMES.slice().map(function (g) {
+            var s = stats[g.id] || { plays: 0, ms: 0, last: 0 };
+            return { g: g, best: getBest(g.id), plays: s.plays || 0, ms: s.ms || 0, last: s.last || 0 };
+        }).sort(function (a, b) { return b.plays - a.plays || a.g.name.localeCompare(b.g.name); });
+
+        var table = el("div", { class: "score-list" });
+        rows.forEach(function (r) {
+            var lowerBetter = (r.g.best || "high") === "low";
+            var bestTxt = r.best == null ? "—" : r.best + (r.g.bestSuffix || "");
+            table.appendChild(el("div", { class: "score-row" }, [
+                el("div", { class: "sr-ico", html: r.g.icon || "&#127918;", style: "background:" + (r.g.gradient || "#7C5CFF") }),
+                el("div", { class: "sr-main" }, [
+                    el("div", { class: "sr-name", text: r.g.name }),
+                    el("div", { class: "sr-sub", text: r.plays + (r.plays === 1 ? " play" : " plays") + " · " + fmtDuration(r.ms) + " · " + fmtWhen(r.last) })
+                ]),
+                el("div", { class: "sr-best" }, [
+                    el("div", { class: "sr-bv", text: bestTxt }),
+                    el("div", { class: "sr-bk", text: r.best == null ? "no score yet" : ((r.g.bestLabel || "best") + (lowerBetter ? " (lower=better)" : "")) })
+                ])
+            ]));
+        });
+        wrap.appendChild(table);
+        view.appendChild(wrap);
+        animateView(); window.scrollTo(0, 0);
     }
 
     function renderSettings() {
@@ -905,6 +1245,39 @@
             ]),
             el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openKioskAdmin(); } })
         ]));
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#9203;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Daily play limit" }),
+                el("div", { class: "s-sub", text: limitMin() > 0
+                    ? limitMin() + " min a day · " + minutesLeft() + " min left today"
+                    : "Off — unlimited play" })
+            ])
+        ]));
+        var limSeg = el("div", { class: "seg", style: "margin:0 16px 15px" });
+        [[0, "Off"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"]].forEach(function (m) {
+            var b = el("button", { class: limitMin() === m[0] ? "active" : "", text: m[1] });
+            b.addEventListener("click", function () {
+                settings.dailyLimitMin = m[0]; save("settings", settings);
+                limSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+                b.classList.add("active"); Sound.click(); haptic(10);
+                enforceLimit();
+            });
+            limSeg.appendChild(b);
+        });
+        g4.appendChild(limSeg);
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#128260;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Reset today's play time" }),
+                el("div", { class: "s-sub", text: "Give back today's minutes" })
+            ]),
+            el("button", { class: "btn", text: "Reset", onclick: function () {
+                screenTime = { day: todayKey(), ms: 0 }; save("screenTime", screenTime);
+                removeTimeUp(); Sound.good(); toast("Play time reset for today");
+                if (route === "settings") renderSettings();
+            } })
+        ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
         g4.appendChild(el("div", { class: "setting-row" }, [
@@ -967,6 +1340,14 @@
         if (current && current.def && current.def.resumable && liveState != null) {
             save("resume_" + current.def.id, { state: liveState, difficulty: current.difficulty || "medium", ts: Date.now() });
         }
+        if (current && current.def) {
+            var pid = current.def.id;
+            var played = playingId === pid ? (Date.now() - playStartedAt) : 0;
+            endTiming();
+            // A real go at today's challenge counts once you've played it a little.
+            if ((statFor(pid).ms > 10000 || played > 10000)) completeDaily(pid);
+            checkAchievements();
+        }
         liveState = null;
         if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
         current = null; clearOverlays(); removeHelpFab();
@@ -975,12 +1356,13 @@
         teardown();
         if (where === "home") renderHome();
         else if (where === "settings") renderSettings();
+        else if (where === "stats") renderStats();
         else if (where === "game" && arg) openGame(arg);
     }
     function handleBack() {
         if (effLocked()) return true;
         if (document.querySelector(".overlay")) { clearOverlays(); return true; }
-        if (route === "game" || route === "settings") { Sound.click(); go("home"); return true; }
+        if (route === "game" || route === "settings" || route === "stats") { Sound.click(); go("home"); return true; }
         return false;
     }
 
@@ -1043,6 +1425,7 @@
     /* ---------- boot ---------- */
     function boot() {
         setView();
+        migrateGameFilters();
         applyTvClass();
         document.documentElement.classList.toggle("kiosk", kioskOn());
         var topbar = document.getElementById("topbar");

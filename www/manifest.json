@@ -1,11 +1,12 @@
 {
-  "version": "1.7.4",
+  "version": "1.8.0",
   "files": [
     "css/style.css",
     "index.html",
     "js/app.js",
     "js/games/blockblast.js",
     "js/games/breakout.js",
+    "js/games/bubblepop.js",
     "js/games/chess.js",
     "js/games/connect4.js",
     "js/games/flappy.js",

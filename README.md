@@ -1,6 +1,6 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **24 brain games** — Chess, Tetris,
+An offline Android **and Android TV** arcade with **25 brain games** — Chess, Tetris,
 Solitaire, Rush Hour, Wordle, 2048, Reversi and more — plus WiFi auto-updates, a
 built-in kiosk lock, and an optional remote control dashboard.
 
