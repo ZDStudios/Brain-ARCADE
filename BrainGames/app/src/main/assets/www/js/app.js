@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.9.3";
+    var VERSION = "1.10.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -22,10 +22,35 @@
     }
     function save(key, val) { try { LS.setItem("ba_" + key, JSON.stringify(val)); } catch (e) {} }
 
-    var settings = load("settings", { theme: "dark", sound: true, haptics: true, serverUrl: "", deviceName: "" });
-    if (settings.serverUrl == null) settings.serverUrl = "";
+    /* ---------- where the control server lives ----------
+       Baked in so a fresh install is already connected — nobody should have to type
+       a URL on a tablet. When this copy is being served BY a control server (the
+       Render site, or a copy on the LAN) its own origin is by definition the right
+       answer, so use that and the website matches the app automatically. */
+    var DEFAULT_SERVER_URL = "https://brain-arcade-control.onrender.com";
+    function defaultServerUrl() {
+        try {
+            // The control server is the only thing that serves this app under /play/,
+            // so that path means "the server we came from is the right server" — which
+            // is what makes the website on Render match the app with nothing to set up.
+            // Any other static host (or file:// in the APK) gets the built-in URL.
+            if (/^https?:$/.test(location.protocol) && location.pathname.indexOf("/play/") === 0) return location.origin;
+        } catch (e) {}
+        return DEFAULT_SERVER_URL;
+    }
+
+    var settings = load("settings", null);
+    if (!settings) settings = { theme: "dark", sound: true, haptics: true, serverUrl: defaultServerUrl(), deviceName: "", serverUrlSeeded: true };
     if (settings.deviceName == null) settings.deviceName = "";
     if (settings.tvMode == null) settings.tvMode = "auto"; // "auto" | "on" | "off"
+    // Devices that were installed before the URL was built in have never had one;
+    // fill it in once. The flag means clearing the field afterwards sticks.
+    if (!settings.serverUrl && !settings.serverUrlSeeded) {
+        settings.serverUrl = defaultServerUrl();
+        settings.serverUrlSeeded = true;
+        save("settings", settings);
+    }
+    if (settings.serverUrl == null) settings.serverUrl = "";
 
     /* ---------- native bridge helpers ---------- */
     function bridgeCall(name, dflt, arg) {
@@ -57,6 +82,24 @@
         if (settings.tvMode === "on") return true;
         if (settings.tvMode === "off") return false;
         return tvDetected;
+    }
+
+    /* ---------- what kind of device this is ----------
+       Shown to the other players in multiplayer when a device has no name of its
+       own, so "who am I racing?" always has an answer. */
+    function platformLabel() {
+        if (bridgeCall("isTV", false) === true) return "Android TV";
+        if (window.AndroidBridge) return "Android tablet";
+        var ua = "";
+        try { ua = navigator.userAgent || ""; } catch (e) {}
+        if (/iPad/.test(ua)) return "iPad";
+        if (/iPhone/.test(ua)) return "iPhone";
+        if (/Android/.test(ua)) return "Android browser";
+        if (/CrOS/.test(ua)) return "Chromebook";
+        if (/Macintosh|Mac OS X/.test(ua)) return "Mac";
+        if (/Windows/.test(ua)) return "Windows PC";
+        if (/Linux/.test(ua)) return "Linux PC";
+        return "Web browser";
     }
     function applyTvClass() { document.documentElement.classList.toggle("tv", tvActive()); }
 
@@ -487,7 +530,7 @@
     var daily = load("daily", { day: "", id: "", done: false, streak: 0, best: 0 });
     function dailySeed() { var t = todayKey(), h = 0; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return h; }
     function dailyGame() {
-        var list = GAMES.filter(function (g) { return allowed(g.id); });
+        var list = GAMES.filter(function (g) { return allowed(g.id) && !g.requiresServer; });
         if (!list.length) return null;
         return list[dailySeed() % list.length];
     }
@@ -572,7 +615,8 @@
         { id: "puzzle",   name: "Puzzle",   emoji: "&#129513;" },
         { id: "strategy", name: "Strategy", emoji: "&#9822;" },
         { id: "arcade",   name: "Arcade",   emoji: "&#127923;" },
-        { id: "memory",   name: "Memory",   emoji: "&#129504;" }
+        { id: "memory",   name: "Memory",   emoji: "&#129504;" },
+        { id: "versus",   name: "Versus",   emoji: "&#127937;" }
     ];
     var GAME_CATEGORY = {
         mathblitz: "maths", bubblepop: "maths",
@@ -580,7 +624,8 @@
         sudoku: "puzzle", mines: "puzzle", puzzle15: "puzzle", rushhour: "puzzle", blockblast: "puzzle", g2048: "puzzle", tetris: "puzzle",
         chess: "strategy", reversi: "strategy", c4: "strategy", ttt: "strategy", solitaire: "strategy",
         snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
-        memory: "memory", simon: "memory", stroop: "memory"
+        memory: "memory", simon: "memory", stroop: "memory", cube3d: "memory",
+        race: "versus"
     };
     function categoryOf(id) { return GAME_CATEGORY[id] || "arcade"; }
 
@@ -860,6 +905,13 @@
             save: function (k, v) { save(def.id + "_" + k, v); },
             load: function (k, d) { return load(def.id + "_" + k, d); },
             settings: settings,
+            // Multiplayer plumbing: the control server this device is talking to,
+            // plus who it is to the other players.
+            serverUrl: serverUrl(),
+            deviceId: deviceId,
+            deviceName: settings.deviceName || "",
+            platform: platformLabel(),
+            isOnline: online,
             exit: function () { go("home"); }
         };
     }
@@ -902,6 +954,22 @@
     }
     function effLocked() { return serverGoverns && policy.locked; }
     function allowed(id) { var l = effAllowedList(); return !l || l.indexOf(id) > -1; }
+
+    /* ---------- games that need the control server ----------
+       Multiplayer only makes sense with WiFi AND a reachable server, so those cards
+       are hidden until the last heartbeat actually succeeded. Everything else keeps
+       working offline exactly as before. */
+    var serverLive = false;
+    function serverConnected() { return !!(serverUrl() && online() && serverLive); }
+    function gameAvailable(g) { return !g.requiresServer || serverConnected(); }
+    function setServerLive(v) {
+        if (serverLive === v) return;
+        serverLive = v;
+        // Only the home screen shows or hides cards, and only re-render when a
+        // server-only game exists — otherwise this would flash the grid.
+        var hasMp = GAMES.some(function (g) { return g.requiresServer; });
+        if (hasMp && route === "home") renderHome();
+    }
     function serverUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
     function online() {
         try { if (window.AndroidBridge && typeof window.AndroidBridge.isOnline === "function") return !!window.AndroidBridge.isOnline(); } catch (e) {}
@@ -930,8 +998,8 @@
         if (changed && route === "home") renderHome();
     }
     function poll() {
-        if (!serverUrl()) { setDot("off"); setGovern(false); stopStream(); return schedulePoll(30000); }
-        if (!online()) { setDot("offline"); setGovern(false); stopStream(); return schedulePoll(12000); }
+        if (!serverUrl()) { setDot("off"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(30000); }
+        if (!online()) { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(12000); }
         var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
         var body = {
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
@@ -945,6 +1013,7 @@
                 streak: daily.streak || 0, achievements: unlocked().length, achievementsTotal: ACHIEVEMENTS.length,
                 todayMs: (screenTime.day === todayKey() ? screenTime.ms : 0), limitMin: limitMin()
             },
+            platform: platformLabel(),
             canStream: canCapture(),   // true only in the installed app (needs native screen capture)
             canKiosk: kioskSupported(),
             kiosk: kioskOn(),
@@ -957,8 +1026,9 @@
             signal: ctrl
         }).then(function (r) { return r.json(); }).then(function (data) {
             setDot("online");
+            setServerLive(true);
             applyPolicy(data || {});
-        }).catch(function () { setDot("offline"); setGovern(false); stopStream(); }).finally(function () { schedulePoll(streaming ? 4000 : 15000); });
+        }).catch(function () { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); }).finally(function () { schedulePoll(streaming ? 4000 : 15000); });
     }
     function applyPolicy(data) {
         var newLocked = !!data.locked;
@@ -1090,7 +1160,7 @@
         route = "home"; routeArg = null; current = null;
         document.getElementById("backBtn").hidden = true;
         view.innerHTML = "";
-        var list = GAMES.filter(function (g) { return allowed(g.id); });
+        var list = GAMES.filter(function (g) { return allowed(g.id) && gameAvailable(g); });
         var hero = el("div", { class: "hero fade-in" }, [
             el("h1", { text: "Play. Think. Repeat." }),
             el("p", { text: list.length + " brain-teasing games in one arcade. Beat your best scores!" })
@@ -1240,6 +1310,7 @@
         if (effLocked()) return;
         if (limitReached()) { renderTimeUp(); return; }
         if (!allowed(def.id)) { toast("This game is turned off"); return; }
+        if (!gameAvailable(def)) { toast("Needs WiFi and the control server"); return; }
         route = "game"; routeArg = def;
         fitExtra = 0; fitAttempts = 0;   // each game gets its own fit budget
         clearOverlays(); removeHelpFab();
@@ -1520,8 +1591,27 @@
                 if (route === "settings") renderSettings();
             } })
         ]));
-        g4.appendChild(textRow("&#127991;", "Device name", "Shown on the control dashboard", "deviceName", "Tablet"));
-        g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
+        g4.appendChild(textRow("&#127991;", "Device name", "Shown on the dashboard and to other players", "deviceName", "Tablet"));
+        g4.appendChild(textRow("&#127760;", "Control server URL",
+            serverConnected() ? "Connected \u2705 \u2014 multiplayer is available"
+                              : (serverUrl() ? "Set, but not reachable right now" : "Blank \u2014 no dashboard, no multiplayer"),
+            "serverUrl", defaultServerUrl()));
+        // The URL is built in, so getting back to it should not mean typing it out.
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#127968;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Use the built-in server" }),
+                el("div", { class: "s-sub", text: defaultServerUrl() })
+            ]),
+            el("button", { class: "btn", text: "Reset", onclick: function () {
+                settings.serverUrl = defaultServerUrl();
+                settings.serverUrlSeeded = true;
+                save("settings", settings);
+                Sound.good(); toast("Server URL reset");
+                poll();
+                if (route === "settings") renderSettings();
+            } })
+        ]));
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#8635;" }),
             el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Check for updates" }),
@@ -1694,7 +1784,7 @@
         window.addEventListener("touchstart", unlock);
         window.addEventListener("mousedown", unlock);
         window.addEventListener("online", function () { setDot("online"); poll(); });
-        window.addEventListener("offline", function () { setDot("offline"); });
+        window.addEventListener("offline", function () { setDot("offline"); setServerLive(false); });
         renderHome();
         renderLock();
         // Remote / D-pad navigation + the hidden kiosk escape gesture.

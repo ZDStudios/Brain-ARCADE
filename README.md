@@ -1,8 +1,9 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **27 brain games** — Chess, Tetris,
-Solitaire, Rush Hour, Wordle, 2048, Reversi and more — plus WiFi auto-updates, a
-built-in kiosk lock, and an optional remote control dashboard.
+An offline Android **and Android TV** arcade with **29 brain games** — Chess, Tetris,
+Solitaire, Rush Hour, Wordle, 2048, Reversi, a 3D spatial-memory game and a
+head-to-head multiplayer race — plus WiFi auto-updates, a built-in kiosk lock, and
+a remote control dashboard.
 
 https://brain-arcade-control.onrender.com/
 
@@ -19,6 +20,36 @@ unknown sources". Games run fully offline.
 | [`www/`](www) | The **over-the-air bundle** the installed app downloads on WiFi to update its games. `manifest.json` drives it. |
 | [`control-server/`](control-server) | Zero-dependency Node dashboard + API to see tablets online, lock them, or restrict games. Deployable to Render. |
 | [`.github/workflows/android.yml`](.github/workflows/android.yml) | GitHub Actions — builds the signed debug APK and publishes it to a Release. |
+
+## 🧊 Cube Recall 3D
+A rotating lattice of cubes floats in space; some light up in order and you tap them
+back. The lattice keeps turning while you watch, so screen positions are useless and
+you have to track the cubes in three dimensions — it is the block-tapping spatial
+memory test, in 3D. Drag to spin the view yourself; a D-pad moves a selection ring.
+
+The 3D is hand-rolled on a plain 2D canvas (rotate, project, paint faces back to
+front). No WebGL and no libraries, so it renders identically in the app's WebView,
+in a browser, on a TV, and **offline** like everything else.
+
+## 🏁 Brain Race (multiplayer)
+The one game that needs a connection, so its card only appears when the device is on
+WiFi **and** the control server answered its last heartbeat. Every other game stays
+exactly as available as before.
+
+Open Brain Arcade on two (or three) devices, tap **Brain Race** on each, and they see
+each other listed by device name — or by what they are running (`iPad`, `Android TV`,
+`Windows PC`) when a name was never set. Pick one, they accept, both count down
+together and race through the same ten questions. The server generates the questions
+and counts progress, so both sides always agree on who is ahead and who won. Invite
+two devices and all three race at once.
+
+## 🌐 Server URL is built in
+Fresh installs already point at <https://brain-arcade-control.onrender.com> — nobody
+has to type a URL on a tablet. The copy served by the control server itself (the
+website under `/play/`) uses **its own origin**, so the website and the app always
+agree without any configuration. Change it any time in
+**Settings → Control server URL**, or tap **Use the built-in server → Reset** to go
+back. Blank it out and the app is 100% local again (no dashboard, no multiplayer).
 
 ## 🔄 How updates work
 The installed app ships with all games bundled (so it works with **no connection**).
@@ -76,8 +107,15 @@ the games while you're playing. TV layout (bigger type, 4–5 column grid,
 overscan-safe margins) turns on automatically and can be forced in
 **Settings → Appearance → TV mode**.
 
-## 🎮 Control dashboard (optional)
-Deploy [`control-server/`](control-server) to Render (it has a `render.yaml`), then
-put the URL in the app's **Settings → Control server URL**. From the dashboard you can
-lock a tablet or limit it to certain games. With no URL set, the app is 100% local.
+## 🎮 Control dashboard
+Live at <https://brain-arcade-control.onrender.com> (deploy your own from
+[`control-server/`](control-server) — it has a `render.yaml`). New installs already
+point at it. From the dashboard you can lock a tablet, limit it to certain games, see
+every high score, send a message, take remote control, toggle kiosk, or let a device
+out of the app. It also hosts a playable copy of the whole arcade at `/play/`.
 See [`control-server/README.md`](control-server/README.md).
+
+The server is also the multiplayer matchmaker: `/api/mp/sync` keeps presence for the
+lobby, `/api/mp/invite` + `/api/mp/respond` pair devices up, and `/api/mp/answer`
+counts progress so the race has a single source of truth. It is all in memory —
+a restart just drops everyone back to the lobby.

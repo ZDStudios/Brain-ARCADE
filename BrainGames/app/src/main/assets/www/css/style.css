@@ -658,3 +658,47 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
     background:var(--card-2); border:1px solid var(--line); color:var(--text); }
 .ws-word.got { opacity:.5; text-decoration:line-through; border-color:var(--good); }
 :root.tv .ws-word { font-size:17px; }
+
+/* --- Brain Race (multiplayer) --- */
+.mp-head { text-align:center; margin-bottom:14px; }
+.mp-title { font-size:24px; font-weight:900; letter-spacing:-.5px; }
+.mp-invite { display:flex; flex-direction:column; gap:10px; padding:14px; margin-bottom:12px;
+    border-radius:var(--radius); background:linear-gradient(135deg,rgba(244,63,94,.22),rgba(251,146,60,.18));
+    border:1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.mp-invite-txt { font-size:15px; font-weight:700; text-align:center; }
+.mp-peers { display:flex; flex-direction:column; gap:10px; }
+.mp-peer { display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:var(--radius);
+    background:var(--card); border:1px solid var(--line); }
+.mp-peer-ico { font-size:24px; width:32px; text-align:center; }
+.mp-peer-main { flex:1; min-width:0; }
+.mp-peer-name { font-weight:800; font-size:15.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mp-peer-sub { font-size:12px; color:var(--muted); margin-top:2px; }
+.mp-empty { text-align:center; padding:26px 16px; border-radius:var(--radius); background:var(--card);
+    border:1px dashed var(--line); }
+.mp-empty-ico { font-size:38px; }
+.mp-empty-txt { font-weight:800; margin-top:6px; }
+
+.mp-status { text-align:center; font-weight:800; font-size:16px; margin-bottom:12px; color:var(--muted); }
+.mp-track { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+.mp-lane { padding:10px 12px; border-radius:14px; background:var(--card); border:1px solid var(--line); }
+.mp-lane.me { border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+.mp-lane-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
+.mp-lane-name { font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mp-lane-score { font-size:12.5px; font-weight:800; color:var(--muted); }
+.mp-rail { position:relative; height:26px; border-radius:13px; background:var(--card-2);
+    border:1px solid var(--line); overflow:hidden; }
+.mp-fill { position:absolute; inset:0 auto 0 0; border-radius:13px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .35s ease; }
+.mp-racer { position:absolute; top:50%; transform:translate(-55%,-50%); font-size:19px; transition:left .35s ease; z-index:2; }
+.mp-flag { position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:15px; opacity:.85; }
+
+.mp-question { text-align:center; font-size:34px; font-weight:900; letter-spacing:-1px; margin:6px 0 16px; }
+.mp-choices { display:grid; grid-template-columns:repeat(2,1fr); gap:11px; }
+.mp-choice { padding:20px 10px; border-radius:16px; border:1px solid var(--line); background:var(--card-2);
+    color:var(--text); font-size:23px; font-weight:900; cursor:pointer; transition:transform .1s, background .15s; }
+.mp-choice:active { transform:scale(.96); }
+.mp-choice.good { background:var(--good); color:#04120C; border-color:transparent; }
+.mp-choice.bad { background:var(--bad); color:#1A0505; border-color:transparent; }
+:root.tv .mp-question { font-size:44px; }
+:root.tv .mp-choice { font-size:28px; padding:24px 12px; }
+:root.tv .mp-peer-name { font-size:19px; }

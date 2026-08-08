@@ -174,7 +174,7 @@ function render(devices){
                 '<span class="spacer"></span>'+
                 '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+(d.battery!=null?' &middot; &#128267;'+d.battery+'%':'')+' &middot; '+gameList.length+' games</span>'+
             '</div>'+
-            '<div class="id">'+esc(d.id)+'</div>'+
+            '<div class="id">'+esc(d.id)+(d.platform?' &middot; '+esc(d.platform):'')+'</div>'+
             '<div class="row">'+
                 '<button class="btn '+(st.locked?'danger active':'')+'" data-lock="'+d.id+'">'+(st.locked?'🔒 Locked — tap to unlock':'🔓 Lock this tablet')+'</button>'+
                 '<button class="btn" data-all="'+d.id+'">Allow all</button>'+

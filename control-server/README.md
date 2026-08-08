@@ -44,6 +44,15 @@ node server.js         # http://localhost:3000
 | GET    | `/api/devices`   | list of devices + online status + policy |
 | POST   | `/api/policy`    | `{deviceId, locked, allowedGames}` (header `X-Admin-Token` if set) |
 | GET    | `/api/config`    | `{authRequired}` |
+| POST   | `/api/mp/sync`   | Multiplayer lobby poll: `{deviceId, name, platform}` → `{peers, invites, match}` |
+| POST   | `/api/mp/invite` | `{deviceId, to}` — ask another device to race |
+| POST   | `/api/mp/respond`| `{deviceId, inviteId, accept}` → the match (a second accept joins the same one, up to 3 racers) |
+| POST   | `/api/mp/answer` | `{deviceId, matchId, correct}` — the server counts progress and decides the winner |
+| POST   | `/api/mp/quit`   | `{deviceId, matchId, leaveLobby}` |
+
+Multiplayer presence is deliberately separate from the heartbeat device list: a
+tablet is a *device* as soon as it checks in, but only a *racer* while somebody has
+the Brain Race lobby open on it. Presence expires 20s after the last poll.
 
 > State is kept in memory, so it resets if the server restarts (fine for the free
 > tier). Set policies again after a restart, or add a database if you need
