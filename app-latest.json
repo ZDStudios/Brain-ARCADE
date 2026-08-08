@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.9.3",
+  "versionCode": 16,
+  "versionName": "1.10.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "Two new games: Cube Recall 3D (a spinning 3D lattice of cubes \u2014 remember which ones lit up) and Brain Race, a head-to-head race against another device on your server. The server URL is now built in, so a fresh install is connected without typing anything."
 }
