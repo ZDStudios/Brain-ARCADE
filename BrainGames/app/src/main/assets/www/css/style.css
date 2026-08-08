@@ -562,3 +562,99 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 :root.tv .daily-name { font-size:24px; }
 :root.tv .sr-name { font-size:19px; }
 :root.tv .fav-btn { width:46px; height:46px; font-size:22px; }
+
+/* ============================================================
+   v1.9 visual refresh — extra themes + polished surfaces
+   ============================================================ */
+:root[data-theme="ocean"] {
+    --bg:#07182A; --bg-2:#0B2438; --card:#0F2E47; --card-2:#143A57;
+    --text:#EAF6FF; --muted:#8FB4CC; --line:rgba(255,255,255,.10);
+    --accent:#22D3EE; --accent-2:#38BDF8;
+}
+:root[data-theme="candy"] {
+    --bg:#1B0B23; --bg-2:#2A1136; --card:#331344; --card-2:#421A56;
+    --text:#FFEEF9; --muted:#C79BD4; --line:rgba(255,255,255,.11);
+    --accent:#F472B6; --accent-2:#C084FC;
+}
+:root[data-theme="forest"] {
+    --bg:#071A14; --bg-2:#0B2A20; --card:#0F3527; --card-2:#154533;
+    --text:#EAFFF4; --muted:#93C7AC; --line:rgba(255,255,255,.10);
+    --accent:#34D399; --accent-2:#A3E635;
+}
+:root[data-theme="ocean"] body, :root[data-theme="candy"] body, :root[data-theme="forest"] body {
+    background:
+        radial-gradient(1200px 600px at 15% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+        radial-gradient(900px 500px at 110% 10%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 55%),
+        var(--bg);
+}
+:root[data-theme="ocean"] #topbar, :root[data-theme="candy"] #topbar, :root[data-theme="forest"] #topbar {
+    background:linear-gradient(to bottom, var(--bg), color-mix(in srgb, var(--bg) 55%, transparent) 70%, transparent);
+}
+
+/* --- surfaces get a touch more depth and rounder corners --- */
+.hero { background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent-2) 22%, transparent)); }
+.game-card { border-radius:20px; }
+.game-card .glass { background:linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.52)); }
+.game-card .name { letter-spacing:.2px; }
+.game-card:hover { transform:translateY(-2px); }
+.btn { border-radius:14px; }
+.btn.primary { box-shadow:0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); }
+.stat { border-radius:14px; }
+
+/* --- level bar --- */
+.level-row { display:flex; align-items:center; gap:10px; margin-top:12px; }
+.level-badge { font-size:12.5px; font-weight:800; white-space:nowrap; }
+.level-bar { flex:1; height:9px; border-radius:20px; background:rgba(0,0,0,.30); overflow:hidden; border:1px solid var(--line); }
+.level-fill { display:block; height:100%; border-radius:20px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .5s cubic-bezier(.22,1,.36,1); }
+.level-xp { font-size:11.5px; color:var(--muted); white-space:nowrap; font-weight:700; }
+
+/* --- recently played strip --- */
+.recent-strip { display:flex; gap:10px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; }
+.recent-strip::-webkit-scrollbar { display:none; }
+.recent-chip { display:flex; align-items:center; gap:8px; flex:0 0 auto; border:none; cursor:pointer;
+    color:#fff; padding:10px 14px; border-radius:14px; font-weight:700; font-size:13.5px;
+    box-shadow:0 6px 16px rgba(0,0,0,.32); }
+.recent-chip:active { transform:scale(.95); }
+.rc-ico { font-size:18px; }
+
+/* --- search + category chips --- */
+.browse-tools { margin:6px 0 10px; }
+.game-search { width:100%; background:var(--card); border:1px solid var(--line); color:var(--text);
+    padding:12px 14px; border-radius:14px; font-size:15px; -webkit-appearance:none; }
+.game-search:focus { outline:none; border-color:var(--accent); }
+.game-search::placeholder { color:var(--muted); }
+.cat-chips { display:flex; gap:8px; overflow-x:auto; margin-top:10px; padding-bottom:4px; scrollbar-width:none; }
+.cat-chips::-webkit-scrollbar { display:none; }
+.cat-chip { flex:0 0 auto; border:1px solid var(--line); background:var(--card); color:var(--muted);
+    padding:9px 14px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer; }
+.cat-chip.on { background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#fff; border-color:transparent; }
+.cat-chip:active { transform:scale(.95); }
+
+/* --- theme picker --- */
+.theme-picker { display:flex; gap:8px; flex-wrap:wrap; }
+.theme-swatch { position:relative; flex:1 1 84px; min-height:52px; border-radius:14px; border:3px solid transparent;
+    cursor:pointer; display:grid; place-items:end center; padding:6px; }
+.theme-swatch.active { border-color:#fff; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.ts-name { font-size:11.5px; font-weight:800; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.6); }
+
+/* --- confetti on a new record --- */
+.confetti { position:fixed; inset:0; pointer-events:none; z-index:80; overflow:hidden; }
+.confetti i { position:absolute; top:-14px; width:9px; height:14px; border-radius:2px; opacity:.95;
+    animation:confFall 1.9s cubic-bezier(.3,.6,.5,1) forwards; }
+@keyframes confFall {
+    0%   { transform:translateY(-20px) rotate(0deg); opacity:1; }
+    100% { transform:translateY(105vh) rotate(720deg); opacity:.85; }
+}
+
+/* --- Word Search --- */
+.ws-grid { display:grid; gap:2px; touch-action:none; user-select:none; }
+.ws-cell { display:grid; place-items:center; border-radius:6px; background:var(--card-2);
+    font-weight:800; color:var(--text); }
+.ws-cell.sel { background:var(--accent); color:#fff; }
+.ws-cell.found { background:color-mix(in srgb, var(--good) 75%, transparent); color:#04120C; }
+.ws-words { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-top:12px; }
+.ws-word { font-size:13px; font-weight:800; letter-spacing:.6px; padding:6px 11px; border-radius:20px;
+    background:var(--card-2); border:1px solid var(--line); color:var(--text); }
+.ws-word.got { opacity:.5; text-decoration:line-through; border-color:var(--good); }
+:root.tv .ws-word { font-size:17px; }

@@ -10,8 +10,8 @@ android {
         applicationId "com.braingames.arcade"
         minSdk 26
         targetSdk 34
-        versionCode 11
-        versionName "1.8.0"
+        versionCode 12
+        versionName "1.9.0"
     }
 
     // Every build must be signed with the SAME key, or Android refuses to install

@@ -1,6 +1,6 @@
 {
-  "versionCode": 11,
-  "versionName": "1.8.0",
+  "versionCode": 12,
+  "versionName": "1.9.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "New game: Bubble Popper (maths). Plus daily challenge + streaks, achievements, a My Stats screen, favourite games, a daily play-time limit, and full high scores & play stats for every game on the admin dashboard."
+  "notes": "Kiosk now works by being the Home app (no more screen pinning, no PIN), and updating no longer bounces off a pinned screen. Two new games (Word Search, Tower Stack), a fresh look with 5 colour themes, game search + categories, recently played, XP levels and record celebrations."
 }

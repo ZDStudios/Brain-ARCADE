@@ -1,6 +1,6 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **25 brain games** — Chess, Tetris,
+An offline Android **and Android TV** arcade with **27 brain games** — Chess, Tetris,
 Solitaire, Rush Hour, Wordle, 2048, Reversi and more — plus WiFi auto-updates, a
 built-in kiosk lock, and an optional remote control dashboard.
 
@@ -40,19 +40,16 @@ needs one manual uninstall + reinstall.
 
 ## 🔒 Kiosk mode (built in)
 Kiosk mode is part of the app now — the old separate `KioskLock.apk` is no longer
-needed. Turn it on in **Settings → Kiosk mode (PIN 2580)**, or remotely from the
-dashboard. While it's on, the device is pinned to Brain Arcade, the screen stays
-awake, Back can't leave the app, and it relaunches after a reboot. To get out:
-**7 taps in the top-left corner, then the PIN** (or unlock from Settings/the
-dashboard).
+needed. Turn it on in **Settings → Kiosk mode**, or remotely from the dashboard.
 
-Enabling kiosk also lets you set Brain Arcade as the **Home app** so the Home button
-returns here; that option stays hidden on a normal install. For a hard lock with no
-escape gesture at all, provision the device as owner once:
+It works by making Brain Arcade the device's **Home app**: the tablet always comes
+back here — from the Home button, after a reboot, whenever anything else closes —
+the screen stays awake and Back can't leave the app. Enabling it walks you straight
+to the Home-app picker, which is the step that actually matters.
 
-```
-adb shell dpm set-device-owner com.braingames.arcade/.KioskDeviceAdminReceiver
-```
+Screen pinning is deliberately *not* used. It blocked the app's own updater (the
+installer opened for a split second and bounced back) and needed a fiddly escape
+gesture. As the Home app, normal things like installing an update still work.
 
 ## 📺 Android TV
 The APK installs on Android TV and appears on the TV home screen (Leanback launcher

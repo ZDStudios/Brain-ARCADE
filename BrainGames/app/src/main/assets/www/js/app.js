@@ -6,11 +6,12 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.8.0";
+    var VERSION = "1.9.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
-    var route = "home";      // 'home' | 'game' | 'settings'
+    var route = "home";      // 'home' | 'game' | 'settings' | 'stats'
+    var homeQuery = "", homeCat = "all";   // home search + category filter
     var routeArg = null;
 
     /* ---------- storage ---------- */
@@ -60,12 +61,57 @@
     if (!deviceId) { deviceId = "dev_" + Math.random().toString(36).slice(2, 10); }
     save("deviceId", deviceId);
 
+    /* ---------- Feature: colour themes ---------- */
+    var THEMES = [
+        { id: "dark",   name: "Midnight", swatch: "#7C5CFF", bar: "#0B1020" },
+        { id: "light",  name: "Daylight", swatch: "#6366F1", bar: "#F4F6FF" },
+        { id: "ocean",  name: "Ocean",    swatch: "#22D3EE", bar: "#07182A" },
+        { id: "candy",  name: "Candy",    swatch: "#F472B6", bar: "#1B0B23" },
+        { id: "forest", name: "Forest",   swatch: "#34D399", bar: "#071A14" }
+    ];
+    function themeById(id) { for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]; return THEMES[0]; }
     function applyTheme() {
-        document.documentElement.setAttribute("data-theme", settings.theme === "light" ? "light" : "dark");
+        var t = themeById(settings.theme);
+        document.documentElement.setAttribute("data-theme", t.id);
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.setAttribute("content", settings.theme === "light" ? "#F4F6FF" : "#0B1020");
+        if (meta) meta.setAttribute("content", t.bar);
     }
     applyTheme();
+
+    /* ---------- Feature: XP and levels ---------- */
+    function xp() { return load("xp", 0); }
+    // Levels get gradually longer: level n needs 50*n XP.
+    function levelProgress(total) {
+        var lvl = 1, need = 50;
+        while (total >= need) { total -= need; lvl++; need = 50 * lvl; }
+        return { level: lvl, into: total, need: need, pct: Math.round(total / need * 100) };
+    }
+    function addXp(n) {
+        if (!(n > 0)) return;
+        var before = levelProgress(xp()).level;
+        var total = xp() + n; save("xp", total);
+        var after = levelProgress(total).level;
+        if (after > before) {
+            setTimeout(function () {
+                toast("&#11088; Level up! You are now level <b>" + after + "</b>");
+                Sound.win(); haptic(25);
+            }, 500);
+        }
+    }
+
+    /* ---------- Feature: celebrate a new best ---------- */
+    function celebrate() {
+        var host = el("div", { class: "confetti" });
+        var colors = ["#7C5CFF", "#22D3EE", "#34D399", "#FBBF24", "#F472B6"];
+        for (var i = 0; i < 28; i++) {
+            host.appendChild(el("i", { style:
+                "left:" + Math.round(Math.random() * 100) + "%;" +
+                "background:" + colors[i % colors.length] + ";" +
+                "animation-delay:" + (Math.random() * 0.35).toFixed(2) + "s" }));
+        }
+        document.body.appendChild(host);
+        setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 2400);
+    }
 
     /* ---------- responsive sizing ---------- */
     function isTablet() { return Math.min(window.innerWidth, window.innerHeight) >= 600; }
@@ -498,8 +544,42 @@
     function setBest(id, value, mode) {
         var cur = getBest(id);
         var better = cur == null || (mode === "low" ? value < cur : value > cur);
-        if (better) { save(bestKey(id), value); return true; }
+        if (better) {
+            save(bestKey(id), value);
+            addXp(25);              // beating a record is worth more
+            celebrate();
+            return true;
+        }
+        addXp(8);                   // finishing a game always earns something
         return false;
+    }
+
+    /* ---------- Feature: game categories (used by the home filter) ---------- */
+    var CATEGORIES = [
+        { id: "all",      name: "All",      emoji: "&#127918;" },
+        { id: "maths",    name: "Maths",    emoji: "&#128290;" },
+        { id: "words",    name: "Words",    emoji: "&#128172;" },
+        { id: "puzzle",   name: "Puzzle",   emoji: "&#129513;" },
+        { id: "strategy", name: "Strategy", emoji: "&#9822;" },
+        { id: "arcade",   name: "Arcade",   emoji: "&#127923;" },
+        { id: "memory",   name: "Memory",   emoji: "&#129504;" }
+    ];
+    var GAME_CATEGORY = {
+        mathblitz: "maths", bubblepop: "maths",
+        wordle: "words", wordsearch: "words",
+        sudoku: "puzzle", mines: "puzzle", puzzle15: "puzzle", rushhour: "puzzle", blockblast: "puzzle", g2048: "puzzle", tetris: "puzzle",
+        chess: "strategy", reversi: "strategy", c4: "strategy", ttt: "strategy", solitaire: "strategy",
+        snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
+        memory: "memory", simon: "memory", stroop: "memory"
+    };
+    function categoryOf(id) { return GAME_CATEGORY[id] || "arcade"; }
+
+    /* ---------- Feature: recently played ---------- */
+    function recent() { return load("recent", []); }
+    function noteRecent(id) {
+        var r = recent().filter(function (x) { return x !== id; });
+        r.unshift(id);
+        save("recent", r.slice(0, 6));
     }
 
     /* ---------- registry ---------- */
@@ -553,55 +633,9 @@
         if (!load("helpseen_" + def.id, false)) { save("helpseen_" + def.id, true); setTimeout(function () { openHelp(def); }, 380); }
     }
 
-    /* ---------- PIN keypad ---------- */
-    function openPin(onOk, opts) {
-        opts = opts || {};
-        var entered = "";
-        var ov = el("div", { class: "overlay" });
-        var panel = el("div", { class: "panel pop", style: "max-width:300px" });
-        panel.appendChild(el("div", { class: "big", html: "&#128272;" }));
-        panel.appendChild(el("h2", { text: opts.title || "Enter PIN" }));
-        if (opts.sub) panel.appendChild(el("p", { class: "small-note", style: "margin:2px 0 0", text: opts.sub }));
-        var dots = el("div", { class: "pin-dots" });
-        function drawDots() { dots.innerHTML = ""; for (var i = 0; i < 4; i++) dots.appendChild(el("span", { class: "pin-dot" + (i < entered.length ? " on" : "") })); }
-        drawDots(); panel.appendChild(dots);
-        var pad = el("div", { class: "pin-pad" });
-        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
-        function pressKey(k) {
-            Sound.tick(); haptic(6);
-            if (k === "del") { entered = entered.slice(0, -1); drawDots(); return; }
-            if (entered.length >= 4) return;
-            entered += k; drawDots();
-            if (entered.length === 4) {
-                if (entered === PIN) { Sound.good(); close(); onOk(); }
-                else { Sound.bad(); haptic(30); panel.animate([{transform:"translateX(0)"},{transform:"translateX(-8px)"},{transform:"translateX(8px)"},{transform:"translateX(0)"}],{duration:220}); entered = ""; setTimeout(drawDots, 120); }
-            }
-        }
-        ["1","2","3","4","5","6","7","8","9","del","0","ok"].forEach(function (k) {
-            var label = k === "del" ? "&#9003;" : k === "ok" ? "&#10003;" : k;
-            var b = el("button", { class: "pin-key" + (k === "del" || k === "ok" ? " alt" : ""), html: label });
-            b.addEventListener("click", function () { if (k === "ok") { if (entered === PIN) { Sound.good(); close(); onOk(); } else { Sound.bad(); } } else pressKey(k); });
-            pad.appendChild(b);
-        });
-        panel.appendChild(pad);
-        panel.appendChild(el("button", { class: "btn ghost", text: "Cancel", style: "margin-top:12px", onclick: close }));
-        ov.appendChild(panel); document.body.appendChild(ov);
-    }
-
-    /* ---------- Settings are behind the PIN ----------
-       The whole Settings screen asks for the PIN once; after that everything
-       inside it is freely editable. The unlock lasts a few minutes (in memory
-       only) so hopping between Settings and a game doesn't keep asking.      */
-    var SETTINGS_GRACE = 5 * 60 * 1000;
-    var settingsUnlockedAt = 0;
-    function settingsUnlocked() { return (Date.now() - settingsUnlockedAt) < SETTINGS_GRACE; }
-    function openSettings() {
-        if (settingsUnlocked()) { go("settings"); return; }
-        openPin(function () {
-            settingsUnlockedAt = Date.now();
-            go("settings");
-        }, { title: "Settings locked", sub: "Grown-ups only — enter the PIN" });
-    }
+    /* ---------- Settings open freely ----------
+       The PIN gate was removed: it got in the way far more than it helped. */
+    function openSettings() { go("settings"); }
 
     /* ============================================================
        Kiosk mode — built in (replaces the separate "Kiosk Lock" app)
@@ -619,30 +653,40 @@
         setTimeout(function () { schedulePoll(300); }, 60);
         // Keep the Settings row in step with the change we just made.
         if (route === "settings") setTimeout(function () { if (route === "settings") renderSettings(); }, 250);
+        // Kiosk only really works once Brain Arcade is the Home app, so walk the
+        // user straight there rather than leaving it half-done.
+        if (on && bridgeCall("isHomeApp", false) !== true) {
+            setTimeout(function () {
+                overlay({
+                    emoji: "&#127968;", title: "One more step",
+                    sub: "Choose <b>Brain Arcade</b> as the Home app so the tablet always comes back here.",
+                    buttons: [
+                        { label: "Later" },
+                        { label: "Choose now", primary: true, onClick: function () { bridgeCall("openHomeSettings", null); } }
+                    ]
+                });
+            }, 700);
+        }
         return true;
     }
-    function kioskPinned() { return bridgeCall("isPinned", false) === true; }
     function openKioskAdmin() {
         var supported = kioskSupported();
         var on = kioskOn();
         var owner = bridgeCall("isDeviceOwner", false) === true;
         var home = bridgeCall("isHomeApp", false) === true;
-        var pinned = kioskPinned();
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop", style: "max-width:380px;text-align:left" });
         panel.appendChild(el("div", { class: "big", style: "text-align:center", html: on ? "&#128274;" : "&#128275;" }));
         panel.appendChild(el("h2", { style: "text-align:center", text: "Kiosk admin" }));
         var status = on
-            ? (owner ? "Locked to Brain Arcade. No exit gesture (device owner)."
-                     : pinned ? "Locked to Brain Arcade using screen pinning."
-                              : "Kiosk is ON, but Android has not pinned the screen. Setting Brain Arcade as the Home app below keeps the Home button here.")
+            ? (home ? "Kiosk is ON and Brain Arcade is the Home app — the tablet always comes back here, including after a reboot."
+                    : "Kiosk is ON, but Brain Arcade is not the Home app yet. Tap “Set as Home app” below to finish — that is what keeps the tablet here.")
             : "Kiosk mode is off. The tablet works normally.";
         panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 10px", text: status }));
         if (supported) {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
-                html: "Home app: <b>" + (home ? "Brain Arcade" : "not set") + "</b>" +
-                      (home ? " &middot; the Home button stays in the app."
-                            : " &middot; set it so the Home button stays in the app.") }));
+                html: "Home app: <b>" + (home ? "Brain Arcade &#9989;" : "not set yet") + "</b>" +
+                      (home ? "" : " — this is the important bit.") }));
         } else {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
                 text: "Install the Brain Arcade app to use kiosk mode." }));
@@ -661,8 +705,8 @@
         ov.appendChild(panel); document.body.appendChild(ov);
         function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
     }
-    // Hidden escape hatch: 7 quick taps in the top-left corner, then the PIN.
-    // Mirrors the old Kiosk Lock app's admin gesture.
+    // Shortcut to the kiosk panel: 7 quick taps in the top-left corner.
+    // No PIN — Settings is reachable normally now.
     function installCornerGesture() {
         var taps = 0, timer = null;
         document.addEventListener("pointerdown", function (ev) {
@@ -670,11 +714,11 @@
             taps++;
             clearTimeout(timer);
             timer = setTimeout(function () { taps = 0; }, 2500);
-            if (taps >= 7) { taps = 0; openPin(openKioskAdmin); }
+            if (taps >= 7) { taps = 0; openKioskAdmin(); }
         }, true);
     }
 
-    /* ---------- game on/off manager (behind PIN) ---------- */
+    /* ---------- game on/off manager ---------- */
     function openGameManager() {
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel", style: "max-width:420px;width:100%;text-align:left;max-height:82vh;display:flex;flex-direction:column" });
@@ -730,7 +774,6 @@
     }
 
     /* ---------- control policy (admin online) + local PIN list (offline) ---------- */
-    var PIN = "2580";
     var policy = { locked: false, allowedGames: null }; // from server
     var serverGoverns = false;                          // true when online AND admin is restricting
     var allGameIds = function () { return GAMES.map(function (g) { return g.id; }); };
@@ -945,6 +988,13 @@
             el("h1", { text: "Play. Think. Repeat." }),
             el("p", { text: list.length + " brain-teasing games in one arcade. Beat your best scores!" })
         ]);
+        // ---- level bar ----
+        var lp = levelProgress(xp());
+        hero.appendChild(el("div", { class: "level-row" }, [
+            el("span", { class: "level-badge", html: "&#11088; Level " + lp.level }),
+            el("span", { class: "level-bar" }, [ el("span", { class: "level-fill", style: "width:" + lp.pct + "%" }) ]),
+            el("span", { class: "level-xp", text: lp.into + "/" + lp.need + " XP" })
+        ]));
         var heroRow = el("div", { class: "hero-actions" });
         heroRow.appendChild(el("button", { class: "btn", html: "&#128202; My stats",
             onclick: function () { Sound.click(); haptic(8); go("stats"); } }));
@@ -973,6 +1023,44 @@
             view.appendChild(card);
         }
 
+        // ---- Recently played ----
+        var recentDefs = recent().map(function (id) {
+            for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+            return null;
+        }).filter(Boolean).slice(0, 5);
+        if (recentDefs.length) {
+            view.appendChild(el("div", { class: "section-label", text: "Jump back in" }));
+            var strip = el("div", { class: "recent-strip" });
+            recentDefs.forEach(function (def) {
+                var chip = el("button", { class: "recent-chip", style: "background:" + (def.gradient || "#7C5CFF") }, [
+                    el("span", { class: "rc-ico", html: def.icon || "&#127918;" }),
+                    el("span", { class: "rc-name", text: def.name })
+                ]);
+                chip.addEventListener("click", function () { Sound.click(); haptic(10); openGame(def); });
+                strip.appendChild(chip);
+            });
+            view.appendChild(strip);
+        }
+
+        // ---- Search + category filter ----
+        var tools = el("div", { class: "browse-tools" });
+        var search = el("input", { type: "search", class: "game-search", placeholder: "Search games…", value: homeQuery });
+        search.addEventListener("input", function () { homeQuery = search.value; paintGrid(); });
+        tools.appendChild(search);
+        var chips = el("div", { class: "cat-chips" });
+        CATEGORIES.forEach(function (c) {
+            var b = el("button", { class: "cat-chip" + (homeCat === c.id ? " on" : ""), html: c.emoji + " " + c.name });
+            b.addEventListener("click", function () {
+                homeCat = c.id; Sound.click(); haptic(8);
+                chips.querySelectorAll(".cat-chip").forEach(function (x) { x.classList.remove("on"); });
+                b.classList.add("on");
+                paintGrid();
+            });
+            chips.appendChild(b);
+        });
+        tools.appendChild(chips);
+        view.appendChild(tools);
+
         // Favourites float to the top.
         list = list.slice().sort(function (a, b) {
             var fa = isFav(a.id) ? 0 : 1, fb = isFav(b.id) ? 0 : 1;
@@ -980,9 +1068,28 @@
             return GAMES.indexOf(a) - GAMES.indexOf(b);
         });
 
-        view.appendChild(el("div", { class: "section-label", text: favs().length ? "Favourites first" : "All Games" }));
+        var label = el("div", { class: "section-label", text: "All Games" });
+        view.appendChild(label);
         var grid = el("div", { class: "grid" });
-        list.forEach(function (def, i) {
+        var emptyNote = el("div", { class: "small-note", hidden: "hidden", text: "No games match that search." });
+
+        function paintGrid() {
+            var q = (homeQuery || "").trim().toLowerCase();
+            var shown = list.filter(function (g) {
+                if (homeCat !== "all" && categoryOf(g.id) !== homeCat) return false;
+                if (q && g.name.toLowerCase().indexOf(q) < 0) return false;
+                return true;
+            });
+            label.textContent = q || homeCat !== "all"
+                ? shown.length + " game" + (shown.length === 1 ? "" : "s")
+                : (favs().length ? "Favourites first" : "All Games");
+            grid.innerHTML = "";
+            shown.forEach(buildCard);
+            emptyNote.hidden = shown.length > 0;
+            ensureFocusable();
+        }
+
+        function buildCard(def, i) {
             var best = getBest(def.id);
             var bestStr = best == null ? (tvActive() ? "Press OK to play" : "Tap to play")
                                        : (def.bestLabel || "Best") + ": " + best + (def.bestSuffix || "");
@@ -1001,8 +1108,11 @@
             card.appendChild(star);
             card.addEventListener("click", function () { Sound.click(); haptic(12); openGame(def); });
             grid.appendChild(card);
-        });
+        }
+
+        paintGrid();
         view.appendChild(grid);
+        view.appendChild(emptyNote);
         if (!list.length) view.appendChild(el("div", { class: "small-note", text: "No games are currently enabled." }));
         else view.appendChild(el("div", { class: "small-note", html: "Made with &#128150; — everything runs offline on your device." }));
         animateView(); window.scrollTo(0, 0);
@@ -1088,6 +1198,7 @@
         try { cleanup = def.mount(host, api); } catch (e) { toast("Game failed to load"); console.error(e); }
         current = { def: def, cleanup: typeof cleanup === "function" ? cleanup : null, difficulty: difficulty };
         notePlayStart(def.id);
+        noteRecent(def.id);
         beginTiming(def.id);
         showHelpFab(def);
         animateView(); window.scrollTo(0, 0);
@@ -1175,14 +1286,16 @@
         var g1 = el("div", { class: "settings-group" });
         g1.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#127912;" }),
-            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Theme" }), el("div", { class: "s-sub", text: "Choose light or dark mode" }) ])
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Theme" }), el("div", { class: "s-sub", text: "Pick a colour theme" }) ])
         ]));
-        var seg = el("div", { class: "seg", style: "margin:0 16px 15px" });
-        ["dark", "light"].forEach(function (mode) {
-            var b = el("button", { class: settings.theme === mode ? "active" : "", text: mode === "dark" ? "Dark" : "Light" });
+        var seg = el("div", { class: "theme-picker", style: "margin:0 16px 15px" });
+        THEMES.forEach(function (t) {
+            var b = el("button", { class: "theme-swatch" + (settings.theme === t.id ? " active" : ""),
+                style: "background:" + t.swatch, title: t.name });
+            b.appendChild(el("span", { class: "ts-name", text: t.name }));
             b.addEventListener("click", function () {
-                settings.theme = mode; save("settings", settings); applyTheme();
-                seg.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+                settings.theme = t.id; save("settings", settings); applyTheme();
+                seg.querySelectorAll(".theme-swatch").forEach(function (x) { x.classList.remove("active"); });
                 b.classList.add("active"); Sound.click(); haptic(10);
             });
             seg.appendChild(b);

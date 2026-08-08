@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.8.0";
+    private static final String BUNDLED_VERSION = "1.9.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -118,11 +118,9 @@ public class MainActivity extends Activity {
     }
 
     /* ================= Kiosk mode =================
-       Replaces the old separate "Kiosk Lock" app. Two levels:
-         1. Plain install  - Android screen pinning keeps kids inside the app.
-         2. Device owner   - true lock task, no escape gesture at all. Set up once with:
-            adb shell dpm set-device-owner com.braingames.arcade/.KioskDeviceAdminReceiver
-       Either way the app can also be made the Home app, so Home returns here.       */
+       Replaces the old separate "Kiosk Lock" app. Brain Arcade becomes the device's
+       HOME app, so the tablet always returns here. Screen pinning is not used - see
+       applyKiosk() for why.                                                        */
 
     private boolean isKioskEnabled() { return prefs.getBoolean(PREF_KIOSK, false); }
 
@@ -167,32 +165,30 @@ public class MainActivity extends Activity {
         try { getWindow().getDecorView().setSystemUiVisibility(flags); } catch (Exception ignored) {}
     }
 
+    /**
+     * Kiosk mode works by being the device's HOME app, not by screen pinning.
+     *
+     * Pinning caused more problems than it solved: it blocked the app's own updater
+     * and the permission screen (they opened for a moment and bounced back), and it
+     * needed a fiddly escape gesture. As the Home app the tablet simply always comes
+     * back to Brain Arcade — from the Home button, after a reboot, after any app
+     * closes — while normal things like installing an update still work.
+     */
     private void applyKiosk(boolean on) {
         prefs.edit().putBoolean(PREF_KIOSK, on).apply();
         if (on) {
             setHomeAliasEnabled(true);
-        } else if (!isHomeAppInternal()) {
-            // Only hide the Home entry when we are not the device's Home app. If we are,
-            // disabling it here would leave the device with no working Home button.
-            setHomeAliasEnabled(false);
-        }
-        try {
-            if (on) {
-                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                // As device owner we can whitelist ourselves so lock task has no exit gesture.
-                if (isDeviceOwnerInternal()) {
-                    try { dpm.setLockTaskPackages(KioskDeviceAdminReceiver.component(this), new String[]{ getPackageName() }); }
-                    catch (Exception ignored) {}
-                }
-                if (!inLockTask()) startLockTask();
-            } else {
-                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                if (inLockTask()) stopLockTask();
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (!isHomeAppInternal()) {
+                // Only hide the Home entry when we are not the device's Home app. If we
+                // are, disabling it would leave the device with no working Home button.
+                setHomeAliasEnabled(false);
             }
-        } catch (Exception ignored) {
-            // Screen pinning can be refused (e.g. no lock screen set); the app still
-            // runs normally, it just isn't pinned.
         }
+        // Release any pin left over from an older version — pinning is no longer used.
+        try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
         applySystemUi(on);
     }
 
@@ -219,10 +215,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Re-assert pinning if Android dropped it (e.g. after a system dialog).
-        if (isKioskEnabled() && !inLockTask()) {
-            try { startLockTask(); } catch (Exception ignored) {}
-        }
+        // Kiosk no longer pins the screen; clear a pin an older build may have set,
+        // which would otherwise keep blocking updates.
+        if (inLockTask()) { try { stopLockTask(); } catch (Exception ignored) {} }
         applySystemUi(isKioskEnabled());
     }
 
@@ -476,10 +471,18 @@ public class MainActivity extends Activity {
 
     private void promptInstall(File apk, String versionName) {
         try {
+            // Screen pinning blocks launching other apps, so the installer and the
+            // permission screen would open for a split second and bounce straight
+            // back. Step out of lock task first; onResume() restores kiosk after.
+            try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
+
             // Android O+ requires the user to allow installs from this app once.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getPackageManager().canRequestPackageInstalls()) {
                 if (webView != null) webView.evaluateJavascript(
-                        "window.BrainGames && window.BrainGames.toast && window.BrainGames.toast('Allow updates: turn on \\'Install unknown apps\\' for Brain Arcade');", null);
+                        "window.BrainGames && window.BrainGames.updateBlocked && window.BrainGames.updateBlocked("
+                        + JSONObject.quote("Android needs permission before Brain Arcade can install its own updates. "
+                        + "The settings screen is opening now — turn ON \"Allow from this source\", press Back, "
+                        + "then tap Check for updates again.") + ");", null);
                 Intent allow = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + getPackageName()));
                 allow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
