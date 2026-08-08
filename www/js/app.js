@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.9.1";
+    var VERSION = "1.9.2";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -34,6 +34,16 @@
             if (b && typeof b[name] === "function") return (arg === undefined ? b[name]() : b[name](arg));
         } catch (e) {}
         return dflt;
+    }
+
+    /* ---------- installed app version (vs the WiFi-updated games) ----------
+       These are two different things and conflating them was confusing: the games
+       update over WiFi on their own, while the APK version is what Android's app
+       info screen shows.                                                        */
+    function appVersion() {
+        var raw = bridgeCall("getAppVersion", "");
+        if (!raw) return null;
+        try { return JSON.parse(raw); } catch (e) { return null; }
     }
 
     /* ---------- TV / big-screen mode ---------- */
@@ -1430,7 +1440,12 @@
         g4.appendChild(textRow("&#127760;", "Control server URL", "Leave blank to disable remote control", "serverUrl", "https://your-app.onrender.com"));
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#8635;" }),
-            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Check for updates" }), el("div", { class: "s-sub", text: "Download the latest games over WiFi" }) ]),
+            el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Check for updates" }),
+                el("div", { class: "s-sub", text: (function () {
+                    var av = appVersion();
+                    return av ? ("App v" + av.name + " (build " + av.code + ") \u00b7 Games v" + VERSION)
+                              : "Download the latest games over WiFi";
+                })() }) ]),
             el("button", { class: "btn", text: "Check", onclick: function () {
                 Sound.click();
                 try { if (window.AndroidBridge && window.AndroidBridge.checkUpdate) { window.AndroidBridge.checkUpdate(); toast("Checking for updates…"); return; } } catch (e) {}
@@ -1454,7 +1469,11 @@
             } })
         ]));
         wrap.appendChild(g3);
-        wrap.appendChild(el("div", { class: "small-note", html: "Brain Arcade v" + VERSION + " &#183; " + GAMES.length + " games &#183; Offline &amp; private" }));
+        var av = appVersion();
+        wrap.appendChild(el("div", { class: "small-note", html:
+            (av ? "App v" + esc(av.name) + " (build " + av.code + ") &#183; Games v" + VERSION
+                : "Brain Arcade v" + VERSION) +
+            " &#183; " + GAMES.length + " games &#183; Offline &amp; private" }));
         view.appendChild(wrap);
         animateView(); window.scrollTo(0, 0);
         poll();

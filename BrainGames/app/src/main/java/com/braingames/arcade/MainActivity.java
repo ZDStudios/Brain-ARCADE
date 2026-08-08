@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.9.1";
+    private static final String BUNDLED_VERSION = "1.9.2";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -477,6 +477,28 @@ public class MainActivity extends Activity {
                 return;
             }
 
+            // Trust the APK itself, not app-latest.json. The JSON is read straight from
+            // the repo and can advertise a version minutes before the matching APK has
+            // finished publishing. Installing an APK that is not actually newer
+            // "succeeds" but changes nothing, so the app would offer the same update on
+            // every launch forever.
+            long apkCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? pkg.getLongVersionCode() : (long) pkg.versionCode;
+            if (apkCode <= currentVersionCode()) {
+                deleteDir(dir);
+                final long ac = apkCode, cur = currentVersionCode();
+                runOnUiThread(new Runnable() { public void run() {
+                    if (webView == null) return;
+                    String msg = "A newer version (" + remote + ") is announced but the download is still the "
+                            + "old build (version code " + ac + ", you already have " + cur + "). "
+                            + "The new file is probably still uploading — try Check for updates again in a few minutes.";
+                    webView.evaluateJavascript(
+                            "window.BrainGames && window.BrainGames.updateBlocked && window.BrainGames.updateBlocked("
+                            + JSONObject.quote(msg) + ");", null);
+                } });
+                return;
+            }
+
             // The usual cause of "App not installed" / "package conflicts with an
             // existing package": the update is signed with a different key than the
             // copy already on the device. Detect it and say so plainly.
@@ -629,6 +651,23 @@ public class MainActivity extends Activity {
         /** True when some other launcher exists to hand Home back to. */
         @JavascriptInterface
         public boolean hasOtherLauncher() { return hasOtherLauncherInternal(); }
+
+        /**
+         * The version of the INSTALLED APK — which is what Android's own app info
+         * screen shows. The web layer has its own version that updates over WiFi
+         * independently, so showing only that made the app look updated when the
+         * APK had not changed at all.
+         */
+        @JavascriptInterface
+        public String getAppVersion() {
+            try {
+                PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                JSONObject o = new JSONObject();
+                o.put("name", pi.versionName == null ? "?" : pi.versionName);
+                o.put("code", currentVersionCode());
+                return o.toString();
+            } catch (Exception e) { return ""; }
+        }
 
         /** Whether Android actually has the screen pinned right now. */
         @JavascriptInterface

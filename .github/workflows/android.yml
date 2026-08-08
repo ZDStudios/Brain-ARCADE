@@ -60,3 +60,41 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Announce the new version only AFTER the APK is actually downloadable.
+      # app-latest.json is read straight from the repo, so bumping it in the same
+      # commit as the code advertised a version minutes before the matching APK
+      # had finished uploading. The app then downloaded the previous build, which
+      # installs "successfully" but changes nothing — and it re-offered the same
+      # update on every launch. Writing the file here closes that window.
+      - name: Point app-latest.json at the build just published
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        continue-on-error: true
+        run: |
+          set -e
+          VC=$(sed -n 's/.*versionCode \([0-9]\+\).*/\1/p' BrainGames/app/build.gradle | head -1)
+          VN=$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' BrainGames/app/build.gradle | head -1)
+          echo "built versionCode=$VC versionName=$VN"
+          python3 - "$VC" "$VN" <<'PY'
+          import json, sys
+          p = 'app-latest.json'
+          d = json.load(open(p))
+          d['versionCode'] = int(sys.argv[1])
+          d['versionName'] = sys.argv[2]
+          with open(p, 'w') as f:
+              json.dump(d, f, indent=2)
+              f.write('\n')
+          PY
+          if git diff --quiet app-latest.json; then
+            echo "app-latest.json already points at this build"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app-latest.json
+          git commit -m "chore: announce $VN (build $VC) now the APK is published [skip ci]"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push origin HEAD:main && break
+            echo "push attempt $i failed, retrying"; sleep 5
+          done
