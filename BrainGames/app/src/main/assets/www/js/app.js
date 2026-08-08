@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.9.0";
+    var VERSION = "1.9.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -644,6 +644,7 @@
     function kioskOn() { return bridgeCall("isKiosk", false) === true; }
     function setKiosk(on) {
         if (!kioskSupported()) { toast("Kiosk mode needs the installed app"); return false; }
+        var wasHome = bridgeCall("isHomeApp", false) === true;
         bridgeCall("setKiosk", null, !!on);
         document.documentElement.classList.toggle("kiosk", !!on);
         toast(on ? "&#128274; Kiosk mode ON" : "&#128275; Kiosk mode OFF");
@@ -653,6 +654,28 @@
         setTimeout(function () { schedulePoll(300); }, 60);
         // Keep the Settings row in step with the change we just made.
         if (route === "settings") setTimeout(function () { if (route === "settings") renderSettings(); }, 250);
+        // Turning kiosk OFF while Brain Arcade is the Home app: the tablet keeps
+        // returning here until Home is handed back, so say what is happening.
+        if (!on && wasHome) {
+            setTimeout(function () {
+                if (bridgeCall("hasOtherLauncher", true) === false) {
+                    overlay({
+                        emoji: "&#9888;&#65039;", title: "Brain Arcade is the only home screen",
+                        sub: "There is no other launcher on this device, so Brain Arcade has to stay as Home — " +
+                             "otherwise the tablet would have no home screen at all.<br><br>" +
+                             "Install or enable another launcher, then turn kiosk off again.",
+                        buttons: [{ label: "Got it", primary: true }]
+                    });
+                } else {
+                    overlay({
+                        emoji: "&#127968;", title: "Pick your normal home screen",
+                        sub: "Kiosk is off. Choose your usual launcher in the list that just opened and the " +
+                             "tablet will stop returning to Brain Arcade.",
+                        buttons: [{ label: "OK", primary: true }]
+                    });
+                }
+            }, 700);
+        }
         // Kiosk only really works once Brain Arcade is the Home app, so walk the
         // user straight there rather than leaving it half-done.
         if (on && bridgeCall("isHomeApp", false) !== true) {
@@ -681,7 +704,8 @@
         var status = on
             ? (home ? "Kiosk is ON and Brain Arcade is the Home app — the tablet always comes back here, including after a reboot."
                     : "Kiosk is ON, but Brain Arcade is not the Home app yet. Tap “Set as Home app” below to finish — that is what keeps the tablet here.")
-            : "Kiosk mode is off. The tablet works normally.";
+            : (home ? "Kiosk is off, but Brain Arcade is still this device’s Home app, so the tablet keeps coming back here. Use “Give Home back to my launcher” to finish unlocking it."
+                    : "Kiosk mode is off. The tablet works normally.");
         panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 10px", text: status }));
         if (supported) {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
@@ -899,7 +923,7 @@
         // On-demand screen streaming (only while the dashboard asks for it).
         if (data.stream) startStream(); else stopStream();
         // Replay any remote taps queued by the dashboard.
-        if (Array.isArray(data.input) && data.input.length) data.input.forEach(applyRemoteTap);
+        if (Array.isArray(data.input) && data.input.length) data.input.forEach(applyRemoteInput);
         if (changed) refreshPolicyUI();
     }
 
@@ -935,8 +959,19 @@
         })();
     }
     function stopStream() { streaming = false; clearTimeout(streamTimer); }
-    function applyRemoteTap(t) {
-        if (!t || typeof t.x !== "number" || typeof t.y !== "number") return;
+    function applyRemoteInput(t) {
+        if (!t) return;
+        // Scrolling from the dashboard: dyFrac is a fraction of the screen height,
+        // so the same command works whatever the device size is.
+        if (t.type === "scroll") {
+            var dy = (t.dyFrac || 0) * window.innerHeight;
+            // Scroll whatever is actually scrollable — an open panel, or the page.
+            var panel = document.querySelector(".overlay .panel");
+            if (panel && panel.scrollHeight > panel.clientHeight + 4) panel.scrollTop += dy;
+            else window.scrollBy(0, dy);
+            return;
+        }
+        if (typeof t.x !== "number" || typeof t.y !== "number") return;
         var cx = Math.round(t.x * window.innerWidth), cy = Math.round(t.y * window.innerHeight);
         var target = document.elementFromPoint(cx, cy);
         if (!target) return;

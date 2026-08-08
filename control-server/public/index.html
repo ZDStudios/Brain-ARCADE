@@ -58,11 +58,18 @@
     .modal .mhead { display:flex; align-items:center; gap:10px; width:100%; max-width:520px; margin-bottom:12px; }
     .modal .mhead .name { font-size:16px; }
     .modal .screen-wrap { position:relative; flex:1; width:100%; max-width:520px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-    .modal img.screen { max-width:100%; max-height:100%; border-radius:18px; border:2px solid var(--line); background:#000; cursor:crosshair; touch-action:none; }
+    /* The capture is only ~480px wide, and max-width alone never scales an image UP,
+       so the preview used to sit tiny in the middle of a big screen. Fill the wrapper
+       and let object-fit keep the aspect ratio. */
+    .modal img.screen { width:100%; height:100%; object-fit:contain; border-radius:18px;
+        border:2px solid var(--line); background:#000; cursor:grab; touch-action:none; }
+    .modal img.screen:active { cursor:grabbing; }
     .modal .waiting { color:var(--muted); text-align:center; }
     .tapdot { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%; border:3px solid var(--accent2); pointer-events:none; animation:tapfade .5s ease-out forwards; }
     @keyframes tapfade { from{transform:scale(.4);opacity:1;} to{transform:scale(1.4);opacity:0;} }
     .modal .mhint { color:var(--muted); font-size:12px; margin-top:10px; text-align:center; max-width:520px; }
+    .rc-controls { display:flex; gap:10px; margin-top:12px; width:100%; max-width:520px; }
+    .rc-controls .btn { flex:1; }
 
     /* ===== Scores & stats modal ===== */
     .sc-wrap { width:100%; max-width:760px; overflow-y:auto; flex:1; }
@@ -321,13 +328,24 @@ function openRemote(id){
                 '<button class="btn primary" id="rc-close">Close</button>'+
             '</div>'+
             '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">The tablet starts sharing on its next check-in (up to ~15s). If nothing appears, install the latest APK on the tablet.</span></div></div>'+
-            '<div class="mhint">Tap the screen to tap on the tablet. This controls the Brain Arcade app only. Streaming stops when you close this.</div>';
+            '<div class="rc-controls">'+
+                '<button class="btn" id="rc-up">&#9650; Scroll up</button>'+
+                '<button class="btn" id="rc-down">&#9660; Scroll down</button>'+
+            '</div>'+
+            '<div class="mhint">Tap to tap on the tablet, or <b>drag up/down to scroll</b>. Controls the Brain Arcade app only. Streaming stops when you close this.</div>';
         document.body.appendChild(m);
         remote={ id:id, modal:m, frameTimer:null };
         document.getElementById("rc-close").onclick=closeRemote;
+        document.getElementById("rc-up").onclick=function(){ sendScroll(-0.55); };
+        document.getElementById("rc-down").onclick=function(){ sendScroll(0.55); };
         pullFrame();
         remote.frameTimer=setInterval(pullFrame, 1200);
     });
+}
+function sendScroll(dyFrac){
+    if(!remote) return;
+    fetch("/api/input",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},
+        body:JSON.stringify({deviceId:remote.id,type:"scroll",dyFrac:dyFrac})}).catch(function(){});
 }
 function pullFrame(){
     if(!remote) return;
@@ -339,7 +357,44 @@ function pullFrame(){
         if(!img){
             wrap.innerHTML="";
             img=document.createElement("img"); img.className="screen"; wrap.appendChild(img);
-            img.addEventListener("click",function(e){ sendTap(img,e.clientX,e.clientY); });
+            // A short press taps; dragging up/down scrolls the tablet.
+            var startY=null, startX=null, lastY=null, moved=false;
+            img.addEventListener("pointerdown",function(e){
+                startY=lastY=e.clientY; startX=e.clientX; moved=false;
+                img.setPointerCapture&&img.setPointerCapture(e.pointerId);
+            });
+            img.addEventListener("pointermove",function(e){
+                if(startY===null) return;
+                var rect=img.getBoundingClientRect();
+                var slop=Math.max(8, rect.height*0.02);
+                var dy=e.clientY-lastY;
+                if(Math.abs(e.clientY-startY)>slop || Math.abs(e.clientX-startX)>slop) moved=true;
+                if(moved && Math.abs(dy)>slop*0.6){
+                    sendScroll(-dy/rect.height);   // drag up = content scrolls down
+                    lastY=e.clientY;
+                }
+            });
+            img.addEventListener("pointerup",function(e){
+                if(startY===null) return;
+                var rect=img.getBoundingClientRect();
+                var total=e.clientY-startY;
+                // Threshold scales with the preview size so it behaves the same
+                // whether the panel is small or full-screen.
+                var slop=Math.max(8, rect.height*0.02);
+                if(moved || Math.abs(total)>slop){
+                    // Send whatever hasn't been sent incrementally yet.
+                    var remaining=e.clientY-lastY;
+                    if(Math.abs(remaining)>1) sendScroll(-remaining/rect.height);
+                } else {
+                    sendTap(img,e.clientX,e.clientY);
+                }
+                startY=lastY=startX=null; moved=false;
+            });
+            img.addEventListener("pointercancel",function(){ startY=lastY=startX=null; moved=false; });
+            img.addEventListener("wheel",function(e){
+                var rect=img.getBoundingClientRect();
+                sendScroll(e.deltaY/rect.height); e.preventDefault();
+            },{passive:false});
         }
         img.src="data:image/jpeg;base64,"+f.data;
     }).catch(function(){});

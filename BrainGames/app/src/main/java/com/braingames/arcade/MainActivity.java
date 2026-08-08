@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.9.0";
+    private static final String BUNDLED_VERSION = "1.9.1";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -181,11 +181,19 @@ public class MainActivity extends Activity {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (!isHomeAppInternal()) {
-                // Only hide the Home entry when we are not the device's Home app. If we
-                // are, disabling it would leave the device with no working Home button.
-                setHomeAliasEnabled(false);
+            // Turning kiosk off has to actually release the device. While Brain Arcade
+            // remains the Home app the tablet keeps coming back here, so switching
+            // kiosk off looked like it did nothing at all.
+            boolean wasHome = isHomeAppInternal();
+            if (hasOtherLauncherInternal()) {
+                setHomeAliasEnabled(false);      // stop being a Home candidate
+                // Android may hold on to the old default until another launcher is
+                // picked, so show the picker — otherwise nothing visibly changes.
+                if (wasHome) openHomeSettingsInternal();
             }
+            // If Brain Arcade is the ONLY launcher we keep it enabled on purpose:
+            // disabling it would leave the device with no home screen at all.
+            // hasOtherLauncher() lets the web layer explain that.
         }
         // Release any pin left over from an older version — pinning is no longer used.
         try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
@@ -210,6 +218,36 @@ public class MainActivity extends Activity {
             ResolveInfo ri = getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
             return ri != null && ri.activityInfo != null && getPackageName().equals(ri.activityInfo.packageName);
         } catch (Exception e) { return false; }
+    }
+
+    /** Is there any Home app besides Brain Arcade to fall back to? */
+    private boolean hasOtherLauncherInternal() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            java.util.List<ResolveInfo> all = getPackageManager().queryIntentActivities(home, 0);
+            for (int i = 0; i < all.size(); i++) {
+                ResolveInfo ri = all.get(i);
+                if (ri.activityInfo != null && !getPackageName().equals(ri.activityInfo.packageName)) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /** Open Android's Home-app picker, stepping out of any pin so it can actually show. */
+    private void openHomeSettingsInternal() {
+        setHomeAliasEnabled(true);
+        try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
+        try {
+            Intent i = new Intent(Settings.ACTION_HOME_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            try {
+                Intent i2 = new Intent(Settings.ACTION_SETTINGS);
+                i2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i2);
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override
@@ -585,27 +623,12 @@ public class MainActivity extends Activity {
         /** Open Android's "Default apps / Home app" picker so Brain Arcade can be set as Home. */
         @JavascriptInterface
         public void openHomeSettings() {
-            runOnUiThread(new Runnable() { public void run() {
-                // 1. Brain Arcade can only appear in the Home-app list if its HOME entry
-                //    is switched on. Do that first, whether or not kiosk is enabled.
-                setHomeAliasEnabled(true);
-                // 2. Lock task blocks launching other apps, so a pinned kiosk could never
-                //    open Settings. Step out of the pin briefly — onResume() re-pins as
-                //    soon as we come back.
-                try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
-                try {
-                    Intent i = new Intent(Settings.ACTION_HOME_SETTINGS);
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(i);
-                } catch (Exception e) {
-                    try {
-                        Intent i2 = new Intent(Settings.ACTION_SETTINGS);
-                        i2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(i2);
-                    } catch (Exception ignored) {}
-                }
-            } });
+            runOnUiThread(new Runnable() { public void run() { openHomeSettingsInternal(); } });
         }
+
+        /** True when some other launcher exists to hand Home back to. */
+        @JavascriptInterface
+        public boolean hasOtherLauncher() { return hasOtherLauncherInternal(); }
 
         /** Whether Android actually has the screen pinned right now. */
         @JavascriptInterface

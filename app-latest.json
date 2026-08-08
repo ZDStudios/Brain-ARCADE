@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.9.0",
+  "versionCode": 13,
+  "versionName": "1.9.1",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Kiosk now works by being the Home app (no more screen pinning, no PIN), and updating no longer bounces off a pinned screen. Two new games (Word Search, Tower Stack), a fresh look with 5 colour themes, game search + categories, recently played, XP levels and record celebrations."
+  "notes": "Remote control can now scroll the tablet (drag the screen, scroll buttons, or mouse wheel), and turning kiosk off properly hands the home screen back to your normal launcher instead of appearing to do nothing."
 }

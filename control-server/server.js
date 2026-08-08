@@ -180,14 +180,19 @@ const server = http.createServer(async function (req, res) {
         return send(res, 200, { data: fr.data, ts: fr.ts });
     }
 
-    // Dashboard queues a remote tap (normalized 0..1 coordinates).
+    // Dashboard queues remote input: a tap (normalized 0..1 coords) or a scroll
+    // (dyFrac is a fraction of the screen height, so it works on any device).
     if (p === "/api/input" && req.method === "POST") {
         if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         var q = inputs[b.deviceId] || (inputs[b.deviceId] = []);
-        if (typeof b.x === "number" && typeof b.y === "number") q.push({ x: b.x, y: b.y });
-        if (q.length > 20) q.splice(0, q.length - 20);
+        if (b.type === "scroll" && typeof b.dyFrac === "number") {
+            q.push({ type: "scroll", dyFrac: b.dyFrac });
+        } else if (typeof b.x === "number" && typeof b.y === "number") {
+            q.push({ type: "tap", x: b.x, y: b.y });
+        }
+        if (q.length > 30) q.splice(0, q.length - 30);
         return send(res, 200, { ok: true });
     }
 
