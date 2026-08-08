@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.10.0";
+    var VERSION = "1.10.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1225,7 +1225,12 @@
         search.addEventListener("input", function () { homeQuery = search.value; paintGrid(); });
         tools.appendChild(search);
         var chips = el("div", { class: "cat-chips" });
-        CATEGORIES.forEach(function (c) {
+        // Skip categories with nothing in them right now — otherwise "Versus" sits
+        // there offline and leads to an empty grid.
+        CATEGORIES.filter(function (c) {
+            if (c.id === "all") return true;
+            return list.some(function (g) { return categoryOf(g.id) === c.id; });
+        }).forEach(function (c) {
             var b = el("button", { class: "cat-chip" + (homeCat === c.id ? " on" : ""), html: c.emoji + " " + c.name });
             b.addEventListener("click", function () {
                 homeCat = c.id; Sound.click(); haptic(8);
@@ -1252,6 +1257,7 @@
 
         function paintGrid() {
             var q = (homeQuery || "").trim().toLowerCase();
+            if (homeCat !== "all" && !list.some(function (g) { return categoryOf(g.id) === homeCat; })) homeCat = "all";
             var shown = list.filter(function (g) {
                 if (homeCat !== "all" && categoryOf(g.id) !== homeCat) return false;
                 if (q && g.name.toLowerCase().indexOf(q) < 0) return false;

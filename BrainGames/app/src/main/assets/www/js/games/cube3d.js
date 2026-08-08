@@ -9,12 +9,12 @@
    behaves the same in the app's WebView, on a TV and offline. */
 (function () {
     window.BrainGames.register({
-        id: "cube3d", name: "Cube Recall 3D", icon: "&#129513;",
+        id: "cube3d", name: "Cube Recall 3D", icon: "&#129482;",
         gradient: "linear-gradient(135deg,#6366F1,#06B6D4)",
         best: "high", bestLabel: "Longest",
         difficulties: true,
         help: {
-            emoji: "&#129513;", goal: "Remember which cubes light up — in 3D, while everything spins.",
+            emoji: "&#129482;", goal: "Remember which cubes light up — in 3D, while everything spins.",
             steps: [
                 "Watch: some cubes flash one after another.",
                 "The lattice keeps turning, so follow the cubes, not the screen positions.",
@@ -251,7 +251,7 @@
                 msg.textContent = "Sequence broken.";
                 var isBest = api.setBest(scored);
                 api.overlay({
-                    emoji: "&#129513;", title: isBest ? "New record!" : "Sequence broken",
+                    emoji: "&#129482;", title: isBest ? "New record!" : "Sequence broken",
                     sub: "You recalled <b>" + scored + "</b> cube" + (scored === 1 ? "" : "s") +
                          " in a row across " + round + " round" + (round === 1 ? "" : "s") + ".",
                     buttons: [
