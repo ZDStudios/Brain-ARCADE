@@ -1,6 +1,6 @@
 {
-  "versionCode": 13,
-  "versionName": "1.9.1",
+  "versionCode": 14,
+  "versionName": "1.9.2",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "Remote control can now scroll the tablet (drag the screen, scroll buttons, or mouse wheel), and turning kiosk off properly hands the home screen back to your normal launcher instead of appearing to do nothing."
 }
