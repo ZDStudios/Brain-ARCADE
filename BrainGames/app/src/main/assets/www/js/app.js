@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.9.2";
+    var VERSION = "1.9.3";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -652,9 +652,45 @@
        ============================================================ */
     function kioskSupported() { return bridgeCall("isKiosk", null) !== null; }
     function kioskOn() { return bridgeCall("isKiosk", false) === true; }
+    function isHomeApp() { return bridgeCall("isHomeApp", false) === true; }
+    function hasOtherLauncher() { return bridgeCall("hasOtherLauncher", true) !== false; }
+    /** Name of the launcher we would hand the device back to, e.g. "Pixel Launcher". */
+    function otherLauncherName() {
+        var n = bridgeCall("otherLauncherName", "");
+        return typeof n === "string" && n ? n : "your home screen";
+    }
+    /** Probe for the method WITHOUT calling it — calling it would leave the app. */
+    function canLeaveApp() {
+        try { return !!(window.AndroidBridge && typeof window.AndroidBridge.leaveApp === "function"); }
+        catch (e) { return false; }
+    }
+
+    /**
+     * Step out of Brain Arcade to the normal home screen. This does NOT change the
+     * kiosk setting — with kiosk on, the Home button brings the tablet straight back,
+     * which is exactly what you want for a quick trip to another app.
+     */
+    function leaveApp() {
+        if (!canLeaveApp()) {
+            toast(kioskSupported() ? "Update the app to leave from here" : "Leaving needs the installed app");
+            return false;
+        }
+        Sound.click(); haptic(15);
+        var ok = bridgeCall("leaveApp", false);
+        if (ok === false) {
+            overlay({
+                emoji: "&#9888;&#65039;", title: "Nowhere to go",
+                sub: "Android could not find another home screen to switch to on this device.",
+                buttons: [{ label: "Got it", primary: true }]
+            });
+            return false;
+        }
+        return true;
+    }
+
     function setKiosk(on) {
         if (!kioskSupported()) { toast("Kiosk mode needs the installed app"); return false; }
-        var wasHome = bridgeCall("isHomeApp", false) === true;
+        var wasHome = isHomeApp();
         bridgeCall("setKiosk", null, !!on);
         document.documentElement.classList.toggle("kiosk", !!on);
         toast(on ? "&#128274; Kiosk mode ON" : "&#128275; Kiosk mode OFF");
@@ -664,11 +700,11 @@
         setTimeout(function () { schedulePoll(300); }, 60);
         // Keep the Settings row in step with the change we just made.
         if (route === "settings") setTimeout(function () { if (route === "settings") renderSettings(); }, 250);
-        // Turning kiosk OFF while Brain Arcade is the Home app: the tablet keeps
-        // returning here until Home is handed back, so say what is happening.
+        // Turning kiosk OFF while Brain Arcade is the Home app: say what happened and
+        // offer the way out, instead of leaving the tablet apparently still locked.
         if (!on && wasHome) {
             setTimeout(function () {
-                if (bridgeCall("hasOtherLauncher", true) === false) {
+                if (!hasOtherLauncher()) {
                     overlay({
                         emoji: "&#9888;&#65039;", title: "Brain Arcade is the only home screen",
                         sub: "There is no other launcher on this device, so Brain Arcade has to stay as Home — " +
@@ -676,12 +712,23 @@
                              "Install or enable another launcher, then turn kiosk off again.",
                         buttons: [{ label: "Got it", primary: true }]
                     });
-                } else {
+                } else if (isHomeApp()) {
+                    // Android still points Home here, so the picker was opened for it.
                     overlay({
                         emoji: "&#127968;", title: "Pick your normal home screen",
-                        sub: "Kiosk is off. Choose your usual launcher in the list that just opened and the " +
-                             "tablet will stop returning to Brain Arcade.",
+                        sub: "Kiosk is off. Choose <b>" + esc(otherLauncherName()) + "</b> in the list that just " +
+                             "opened and the tablet will stop returning to Brain Arcade.",
                         buttons: [{ label: "OK", primary: true }]
+                    });
+                } else {
+                    overlay({
+                        emoji: "&#128275;", title: "Unlocked",
+                        sub: "Kiosk is off and the home screen has been handed back to <b>" +
+                             esc(otherLauncherName()) + "</b>. You can leave Brain Arcade whenever you like.",
+                        buttons: [
+                            { label: "Stay here" },
+                            { label: "Leave now", primary: true, onClick: function () { leaveApp(); } }
+                        ]
                     });
                 }
             }, 700);
@@ -705,22 +752,24 @@
     function openKioskAdmin() {
         var supported = kioskSupported();
         var on = kioskOn();
-        var owner = bridgeCall("isDeviceOwner", false) === true;
-        var home = bridgeCall("isHomeApp", false) === true;
+        var home = isHomeApp();
+        var other = hasOtherLauncher();
+        var launcher = otherLauncherName();
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop", style: "max-width:380px;text-align:left" });
         panel.appendChild(el("div", { class: "big", style: "text-align:center", html: on ? "&#128274;" : "&#128275;" }));
         panel.appendChild(el("h2", { style: "text-align:center", text: "Kiosk admin" }));
         var status = on
-            ? (home ? "Kiosk is ON and Brain Arcade is the Home app — the tablet always comes back here, including after a reboot."
+            ? (home ? "Kiosk is ON and Brain Arcade is the Home app — the tablet always comes back here, including after a reboot. You can still step out any time with “Leave Brain Arcade”."
                     : "Kiosk is ON, but Brain Arcade is not the Home app yet. Tap “Set as Home app” below to finish — that is what keeps the tablet here.")
-            : (home ? "Kiosk is off, but Brain Arcade is still this device’s Home app, so the tablet keeps coming back here. Use “Give Home back to my launcher” to finish unlocking it."
+            : (home ? "Kiosk is off, but Brain Arcade is still this device’s Home app, so the Home button comes back here. “Leave Brain Arcade” gets out now; “Give Home back” makes it permanent."
                     : "Kiosk mode is off. The tablet works normally.");
         panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 10px", text: status }));
         if (supported) {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
                 html: "Home app: <b>" + (home ? "Brain Arcade &#9989;" : "not set yet") + "</b>" +
-                      (home ? "" : " — this is the important bit.") }));
+                      (other ? " &#183; can hand back to <b>" + esc(launcher) + "</b>"
+                             : " &#183; no other launcher on this device") }));
         } else {
             panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:0 0 14px",
                 text: "Install the Brain Arcade app to use kiosk mode." }));
@@ -730,12 +779,20 @@
             btns.appendChild(el("button", { class: "btn " + (on ? "" : "primary"), style: "width:100%",
                 html: on ? "&#128275; Turn kiosk OFF" : "&#128274; Turn kiosk ON",
                 onclick: function () { close(); setKiosk(!on); } }));
+            // The way out that does not depend on the Home-app picker at all.
+            if (canLeaveApp()) {
+                btns.appendChild(el("button", { class: "btn" + (on ? " primary" : ""), style: "width:100%",
+                    html: "&#128682; Leave Brain Arcade",
+                    onclick: function () { close(); leaveApp(); } }));
+            }
             btns.appendChild(el("button", { class: "btn", style: "width:100%",
-                text: home ? "Give Home back to my launcher" : "Set as Home app",
+                text: home ? "Give Home back to " + launcher : "Set as Home app",
                 onclick: function () { close(); bridgeCall("openHomeSettings", null); } }));
         }
         btns.appendChild(el("button", { class: "btn ghost", style: "width:100%", text: "Close", onclick: function () { close(); } }));
         panel.appendChild(btns);
+        panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:12px 0 0",
+            text: "Shortcut: 7 quick taps in the top-left corner opens this panel from anywhere." }));
         ov.appendChild(panel); document.body.appendChild(ov);
         function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
     }
@@ -929,6 +986,11 @@
         if (data.kiosk && data.kiosk.ts && data.kiosk.ts !== load("lastKiosk", null)) {
             save("lastKiosk", data.kiosk.ts);
             if (kioskSupported() && kioskOn() !== !!data.kiosk.on) setKiosk(!!data.kiosk.on);
+        }
+        // Remote "let them out of the app" command from the dashboard.
+        if (data.leave && data.leave !== load("lastLeave", null)) {
+            save("lastLeave", data.leave);
+            if (canLeaveApp()) leaveApp();
         }
         // On-demand screen streaming (only while the dashboard asks for it).
         if (data.stream) startStream(); else stopStream();
@@ -1390,18 +1452,40 @@
                 if (!w) toast("Update to the latest app to use the built-in browser");
             } })
         ]));
+        // Kiosk is a real switch now: flipping it here is the whole action, with the
+        // admin panel one tap further in for the Home-app details.
+        var kSwitch = el("input", { type: "checkbox" });
+        kSwitch.checked = kioskOn();
+        kSwitch.disabled = !kioskSupported();
+        kSwitch.addEventListener("change", function () { setKiosk(kSwitch.checked); });
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: kioskOn() ? "&#128274;" : "&#128275;" }),
             el("div", { class: "s-text" }, [
                 el("div", { class: "s-title", text: "Kiosk mode" }),
                 el("div", { class: "s-sub", text: kioskSupported()
                     ? (kioskOn()
-                        ? (tvActive() ? "ON — locked to Brain Arcade. Unlock here."
-                                      : "ON — locked to Brain Arcade. 7 taps top-left, or unlock here.")
-                        : "Lock the device to Brain Arcade only")
+                        ? "ON — the tablet always comes back to Brain Arcade"
+                        : "OFF — lock the device to Brain Arcade only")
                     : "Needs the installed app" })
             ]),
-            el("button", { class: "btn", text: "Open", onclick: function () { Sound.click(); openKioskAdmin(); } })
+            el("label", { class: "switch" }, [kSwitch, el("span", { class: "track" }), el("span", { class: "thumb" })]),
+            el("button", { class: "btn ghost", style: "margin-left:10px", text: "Details",
+                onclick: function () { Sound.click(); openKioskAdmin(); } })
+        ]));
+        // The way out. Kiosk on or off, this hands the screen to the normal launcher;
+        // with kiosk on the Home button brings the tablet straight back here.
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#128682;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Leave Brain Arcade" }),
+                el("div", { class: "s-sub", text: canLeaveApp()
+                    ? (hasOtherLauncher()
+                        ? "Go to " + otherLauncherName() + (kioskOn() ? " — Home comes back here" : "")
+                        : "No other home screen on this device")
+                    : "Needs the installed app" })
+            ]),
+            el("button", { class: "btn" + (canLeaveApp() ? "" : " ghost"), text: "Leave",
+                onclick: function () { leaveApp(); } })
         ]));
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#9203;" }),
@@ -1624,6 +1708,9 @@
 
     window.BrainGames = {
         register: register, boot: boot, handleBack: handleBack, toast: toast, go: go,
-        openSettings: openSettings, onUpdate: onUpdate, updateBlocked: updateBlocked, version: VERSION
+        openSettings: openSettings, onUpdate: onUpdate, updateBlocked: updateBlocked, version: VERSION,
+        // Kiosk controls, so the app can be unlocked/left from anywhere (including
+        // the dashboard's remote control).
+        setKiosk: setKiosk, kioskOn: kioskOn, openKioskAdmin: openKioskAdmin, leaveApp: leaveApp
     };
 })();

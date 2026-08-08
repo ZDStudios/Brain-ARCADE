@@ -93,6 +93,9 @@ const server = http.createServer(async function (req, res) {
             appUpdate: cmd.appUpdateAt || null,
             popup: cmd.popupAt ? { text: cmd.popupText || "", ts: cmd.popupAt } : null,
             kiosk: cmd.kioskAt ? { on: !!cmd.kioskOn, ts: cmd.kioskAt } : null,
+            // "let them out": step the tablet out to its normal home screen without
+            // changing the kiosk setting.
+            leave: cmd.leaveAt || null,
             stream: !!cmd.stream,
             input: taps,
             scoresBackup: scores[b.deviceId] || null
@@ -161,6 +164,7 @@ const server = http.createServer(async function (req, res) {
         else if (b.action === "popup") { cmd.popupText = String(b.text || "").slice(0, 500); cmd.popupAt = Date.now(); }
         else if (b.action === "stream") { cmd.stream = !!b.on; if (!b.on) delete frames[b.deviceId]; }
         else if (b.action === "kiosk") { cmd.kioskOn = !!b.on; cmd.kioskAt = Date.now(); }
+        else if (b.action === "leave") { cmd.leaveAt = Date.now(); }
         return send(res, 200, { ok: true });
     }
 

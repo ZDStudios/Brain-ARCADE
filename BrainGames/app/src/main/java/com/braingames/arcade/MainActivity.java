@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.9.2";
+    private static final String BUNDLED_VERSION = "1.9.3";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -187,9 +187,11 @@ public class MainActivity extends Activity {
             boolean wasHome = isHomeAppInternal();
             if (hasOtherLauncherInternal()) {
                 setHomeAliasEnabled(false);      // stop being a Home candidate
-                // Android may hold on to the old default until another launcher is
-                // picked, so show the picker — otherwise nothing visibly changes.
-                if (wasHome) openHomeSettingsInternal();
+                // Disabling the alias is usually enough — Android then resolves Home
+                // to the remaining launcher on its own. Only when it still points
+                // here does the user actually need the picker, so don't send them
+                // into Settings for nothing.
+                if (wasHome && isHomeAppInternal()) openHomeSettingsInternal();
             }
             // If Brain Arcade is the ONLY launcher we keep it enabled on purpose:
             // disabling it would leave the device with no home screen at all.
@@ -220,15 +222,67 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return false; }
     }
 
-    /** Is there any Home app besides Brain Arcade to fall back to? */
-    private boolean hasOtherLauncherInternal() {
+    /**
+     * The best Home app that is NOT Brain Arcade, or null if this is the only one.
+     * Android registers a fallback resolver activity in the "android" package as a
+     * Home candidate; it is a last resort, never the preferred launcher.
+     */
+    private ResolveInfo otherLauncherInternal() {
+        ResolveInfo fallback = null;
         try {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
             java.util.List<ResolveInfo> all = getPackageManager().queryIntentActivities(home, 0);
             for (int i = 0; i < all.size(); i++) {
                 ResolveInfo ri = all.get(i);
-                if (ri.activityInfo != null && !getPackageName().equals(ri.activityInfo.packageName)) return true;
+                if (ri.activityInfo == null) continue;
+                String p = ri.activityInfo.packageName;
+                if (getPackageName().equals(p)) continue;
+                if ("android".equals(p)) { if (fallback == null) fallback = ri; continue; }
+                return ri;
             }
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    /** Is there any Home app besides Brain Arcade to fall back to? */
+    private boolean hasOtherLauncherInternal() { return otherLauncherInternal() != null; }
+
+    /**
+     * Actually leave Brain Arcade.
+     *
+     * Turning kiosk off used to be the only way out, and it needed a trip through
+     * Android's Home-app picker — so "kiosk off" looked like it did nothing, and
+     * there was no way to just step out of the app for a minute. This launches the
+     * real launcher by explicit component, which works even while Brain Arcade is
+     * still the registered Home app, and drops this task behind it.
+     *
+     * @return true if control was handed to something else.
+     */
+    private boolean leaveAppInternal() {
+        // Immersive mode hides the nav bar; give it back or the user is stranded.
+        applySystemUi(false);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        try { if (inLockTask()) stopLockTask(); } catch (Exception ignored) {}
+        ResolveInfo ri = otherLauncherInternal();
+        if (ri != null && ri.activityInfo != null) {
+            try {
+                Intent i = new Intent(Intent.ACTION_MAIN);
+                i.addCategory(Intent.CATEGORY_HOME);
+                i.setComponent(new ComponentName(ri.activityInfo.packageName, ri.activityInfo.name));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                startActivity(i);
+                moveTaskToBack(true);
+                return true;
+            } catch (Exception ignored) {}
+        }
+        // No other launcher at all: Settings is at least somewhere to go, and it is
+        // where another launcher gets enabled or installed from.
+        try {
+            Intent s = new Intent(Settings.ACTION_SETTINGS);
+            s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(s);
+            moveTaskToBack(true);
+            return true;
         } catch (Exception ignored) {}
         return false;
     }
@@ -567,9 +621,14 @@ public class MainActivity extends Activity {
             webView.evaluateJavascript(
                     "(window.BrainGames && window.BrainGames.handleBack) ? window.BrainGames.handleBack() : false;",
                     value -> {
+                        if ("true".equals(value)) return;   // the web app handled it
                         // In kiosk mode Back never leaves the app — it only steps back
                         // inside Brain Arcade.
-                        if (!"true".equals(value) && !kiosk) finish();
+                        if (kiosk) return;
+                        // Kiosk is off, so Back should get out. finish() is not enough
+                        // while Brain Arcade is still the Home app: closing the launcher
+                        // just shows the launcher again.
+                        if (isHomeAppInternal()) leaveAppInternal(); else finish();
                     });
             return true;
         }
@@ -651,6 +710,33 @@ public class MainActivity extends Activity {
         /** True when some other launcher exists to hand Home back to. */
         @JavascriptInterface
         public boolean hasOtherLauncher() { return hasOtherLauncherInternal(); }
+
+        /** The name of that other launcher (e.g. "Pixel Launcher"), or "" if there is none. */
+        @JavascriptInterface
+        public String otherLauncherName() {
+            try {
+                ResolveInfo ri = otherLauncherInternal();
+                if (ri == null) return "";
+                CharSequence label = ri.loadLabel(getPackageManager());
+                return label == null ? "" : label.toString();
+            } catch (Exception e) { return ""; }
+        }
+
+        /**
+         * Step out of Brain Arcade to the device's normal home screen. Works with
+         * kiosk either on or off, and does not change the kiosk setting — pressing
+         * Home afterwards comes straight back here while kiosk is on.
+         */
+        @JavascriptInterface
+        public boolean leaveApp() {
+            final boolean[] ok = { false };
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            runOnUiThread(new Runnable() { public void run() {
+                try { ok[0] = leaveAppInternal(); } catch (Exception ignored) {} finally { latch.countDown(); }
+            } });
+            try { latch.await(3, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+            return ok[0];
+        }
 
         /**
          * The version of the INSTALLED APK — which is what Android's own app info

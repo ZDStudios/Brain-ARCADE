@@ -51,6 +51,23 @@ Screen pinning is deliberately *not* used. It blocked the app's own updater (the
 installer opened for a split second and bounced back) and needed a fiddly escape
 gesture. As the Home app, normal things like installing an update still work.
 
+### Getting out
+Three ways, none of them needing a PIN:
+
+| Where | What it does |
+| --- | --- |
+| **Settings → Kiosk mode** switch | Flips kiosk off. If Android still points Home at Brain Arcade it opens the Home-app picker so the change sticks; otherwise it just confirms you're unlocked and offers to leave now. |
+| **Settings → Leave Brain Arcade** | Steps straight out to your normal launcher **without** changing kiosk mode. With kiosk on, the Home button brings the tablet right back — handy for a quick trip to another app. |
+| **7 quick taps in the top-left corner** | Opens the kiosk admin panel from anywhere; it has both of the above. |
+
+The dashboard mirrors this: **Kiosk mode / Exit kiosk** toggles the setting, and
+**🚪 Let them out** sends the tablet to its home screen while leaving kiosk on.
+
+With kiosk off, Back on the home screen also leaves the app — it hands over to the
+real launcher rather than closing, since closing the launcher would just show it
+again. If Brain Arcade is the *only* launcher installed it stays as Home on purpose
+(the device would otherwise have no home screen) and the app explains that.
+
 ## 📺 Android TV
 The APK installs on Android TV and appears on the TV home screen (Leanback launcher
 with a banner). The whole UI is drivable with a **remote or D-pad**: arrows move a
