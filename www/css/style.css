@@ -659,11 +659,15 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .ws-word.got { opacity:.5; text-decoration:line-through; border-color:var(--good); }
 :root.tv .ws-word { font-size:17px; }
 
-/* --- Brain Race (multiplayer) --- */
-.mp-head { text-align:center; margin-bottom:14px; }
-.mp-title { font-size:24px; font-weight:900; letter-spacing:-.5px; }
+/* --- Brain Race 3D (multiplayer) --- */
+.mp-hero { text-align:center; padding:18px 14px 20px; margin-bottom:14px; border-radius:var(--radius);
+    background:linear-gradient(150deg,rgba(244,63,94,.25),rgba(124,92,255,.28)); border:1px solid var(--line); }
+.mp-hero-ico { font-size:46px; line-height:1; }
+.mp-title { font-size:27px; font-weight:900; letter-spacing:-.7px; margin-top:4px; }
+.mp-sub { font-size:13.5px; color:var(--muted); margin-top:6px; max-width:330px; margin-left:auto; margin-right:auto; }
+.mp-you { font-size:12px; color:var(--muted); margin-top:10px; opacity:.85; }
 .mp-invite { display:flex; flex-direction:column; gap:10px; padding:14px; margin-bottom:12px;
-    border-radius:var(--radius); background:linear-gradient(135deg,rgba(244,63,94,.22),rgba(251,146,60,.18));
+    border-radius:var(--radius); background:linear-gradient(135deg,rgba(244,63,94,.24),rgba(251,146,60,.18));
     border:1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
 .mp-invite-txt { font-size:15px; font-weight:700; text-align:center; }
 .mp-peers { display:flex; flex-direction:column; gap:10px; }
@@ -678,27 +682,77 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .mp-empty-ico { font-size:38px; }
 .mp-empty-txt { font-weight:800; margin-top:6px; }
 
-.mp-status { text-align:center; font-weight:800; font-size:16px; margin-bottom:12px; color:var(--muted); }
-.mp-track { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
-.mp-lane { padding:10px 12px; border-radius:14px; background:var(--card); border:1px solid var(--line); }
-.mp-lane.me { border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
-.mp-lane-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
-.mp-lane-name { font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mp-lane-score { font-size:12.5px; font-weight:800; color:var(--muted); }
-.mp-rail { position:relative; height:26px; border-radius:13px; background:var(--card-2);
-    border:1px solid var(--line); overflow:hidden; }
-.mp-fill { position:absolute; inset:0 auto 0 0; border-radius:13px;
-    background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .35s ease; }
-.mp-racer { position:absolute; top:50%; transform:translate(-55%,-50%); font-size:19px; transition:left .35s ease; z-index:2; }
-.mp-flag { position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:15px; opacity:.85; }
+/* the 3D track */
+.mp-view { border-radius:18px; overflow:hidden; border:1px solid var(--line); box-shadow:var(--shadow); line-height:0; }
+.mp-canvas { display:block; width:100%; height:auto; }
+.mp-status { text-align:center; font-weight:800; font-size:15.5px; margin:11px 0 9px; }
 
-.mp-question { text-align:center; font-size:34px; font-weight:900; letter-spacing:-1px; margin:6px 0 16px; }
-.mp-choices { display:grid; grid-template-columns:repeat(2,1fr); gap:11px; }
-.mp-choice { padding:20px 10px; border-radius:16px; border:1px solid var(--line); background:var(--card-2);
-    color:var(--text); font-size:23px; font-weight:900; cursor:pointer; transition:transform .1s, background .15s; }
-.mp-choice:active { transform:scale(.96); }
-.mp-choice.good { background:var(--good); color:#04120C; border-color:transparent; }
-.mp-choice.bad { background:var(--bad); color:#1A0505; border-color:transparent; }
-:root.tv .mp-question { font-size:44px; }
-:root.tv .mp-choice { font-size:28px; padding:24px 12px; }
+/* boost meter */
+.mp-energy { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+.mp-energy-k { font-size:11px; font-weight:900; letter-spacing:.9px; color:var(--muted); }
+.mp-energy-bar { flex:1; height:12px; border-radius:8px; background:var(--card-2); border:1px solid var(--line); overflow:hidden; }
+.mp-energy-fill { display:block; height:100%; width:0%; border-radius:8px;
+    background:linear-gradient(90deg,#FBBF24,#F43F5E); transition:width .25s ease; }
+.mp-energy-txt { font-size:13px; font-weight:900; min-width:14px; text-align:right; }
+
+/* abilities */
+.mp-abilities { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
+.mp-ability { display:flex; flex-direction:column; align-items:center; gap:2px; padding:9px 4px;
+    border-radius:14px; border:1px solid var(--line); background:var(--card); color:var(--text);
+    opacity:.45; cursor:not-allowed; transition:transform .1s, opacity .2s, box-shadow .2s; }
+.mp-ability.ready { opacity:1; cursor:pointer; border-color:color-mix(in srgb, var(--warn) 55%, transparent);
+    box-shadow:0 0 14px color-mix(in srgb, var(--warn) 26%, transparent); }
+.mp-ability.ready:active { transform:scale(.94); }
+.mp-ability .ab-ico { font-size:20px; line-height:1.1; }
+.mp-ability .ab-name { font-size:11px; font-weight:800; }
+.mp-ability .ab-cost { font-size:10.5px; color:var(--muted); font-weight:800; }
+.mp-ability.nav-here { outline:3px solid var(--accent-2); outline-offset:2px; }
+
+/* the task */
+.mp-task { text-align:center; }
+.mp-prompt { font-size:16.5px; font-weight:800; margin-bottom:12px; }
+.mp-word { font-size:44px; font-weight:900; letter-spacing:1px; margin:2px 0 14px; text-shadow:0 3px 14px rgba(0,0,0,.4); }
+.mp-target, .mp-seq, .mp-flash { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:14px; }
+.mp-target-k { font-size:12px; color:var(--muted); font-weight:800; }
+.mp-seq-q { font-size:30px; font-weight:900; color:var(--muted); }
+.mp-tiles { display:grid; grid-template-columns:repeat(2,1fr); gap:11px; }
+.mp-tile { padding:14px 8px; border-radius:18px; border:1px solid var(--line); background:var(--card-2);
+    cursor:pointer; transition:transform .1s, background .15s, box-shadow .15s; min-height:104px;
+    display:grid; place-items:center; }
+.mp-tile:active { transform:scale(.96); }
+.mp-tile.good { background:var(--good); box-shadow:0 0 18px color-mix(in srgb, var(--good) 45%, transparent); }
+.mp-tile.bad { background:var(--bad); }
+.mp-tile.nav-here { outline:3px solid var(--accent-2); outline-offset:2px; }
+.mp-tile-in { display:grid; place-items:center; line-height:0; }
+.mp-swatch { display:block; width:62px; height:62px; border-radius:14px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.25); }
+.mp-task.scrambled .mp-tiles { animation:mpJitter .7s ease-in-out infinite; }
+@keyframes mpJitter { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-3px); } 75% { transform:translateX(3px); } }
+
+@media (min-width:620px) { .mp-tiles { grid-template-columns:repeat(4,1fr); } }
+:root.tv .mp-prompt { font-size:22px; }
+:root.tv .mp-word { font-size:60px; }
+:root.tv .mp-tile { min-height:130px; }
 :root.tv .mp-peer-name { font-size:19px; }
+:root.tv .mp-ability .ab-name { font-size:14px; }
+
+/* --- adult PIN keypad --- */
+.pin-panel { max-width:330px; }
+.pin-dots { display:flex; justify-content:center; gap:12px; margin-bottom:16px; }
+.pin-dots i { width:14px; height:14px; border-radius:50%; background:var(--card-2);
+    border:1px solid var(--line); transition:background .15s, transform .15s; }
+.pin-dots i.on { background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-color:transparent; transform:scale(1.15); }
+.pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.pin-key { padding:16px 0; font-size:22px; font-weight:800; border-radius:14px;
+    border:1px solid var(--line); background:var(--card-2); color:var(--text); cursor:pointer; }
+.pin-key:active { transform:scale(.94); }
+.pin-key:focus-visible, .pin-key.nav-focus { outline:3px solid var(--accent-2); outline-offset:2px; }
+.pin-key.go { background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-color:transparent; color:#fff; }
+.pin-key.del { color:var(--muted); }
+.pin-err { color:var(--bad); font-size:13px; font-weight:800; margin-top:12px; }
+.shake { animation:pinShake .3s ease; }
+@keyframes pinShake {
+    0%,100% { transform:translateX(0); }
+    20% { transform:translateX(-9px); } 40% { transform:translateX(8px); }
+    60% { transform:translateX(-5px); } 80% { transform:translateX(4px); }
+}
+:root.tv .pin-key { padding:20px 0; font-size:26px; }

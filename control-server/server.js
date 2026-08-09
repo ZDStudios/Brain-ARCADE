@@ -30,7 +30,15 @@ function defaultPolicy() { return { locked: false, allowedGames: null }; }
    "device" the moment it checks in, but it is only a racer while somebody has the
    multiplayer lobby open on it.                                                  */
 const MP_MAX = 3;                     // racers per match
-const MP_QUESTIONS = 10;
+const MP_TASKS = 12;                  // tasks to complete the race
+const MP_ENERGY_MAX = 9;
+/* Special abilities. Costs are in boost energy, which you earn by answering. */
+const MP_ABILITIES = {
+    turbo:    { cost: 3, jump: 2 },                 // jump two lengths forward
+    freeze:   { cost: 4, ms: 3000 },                // the leader cannot answer for 3s
+    scramble: { cost: 2, ms: 8000 },                // the leader's tiles keep shuffling
+    shield:   { cost: 3, ms: 12000, self: true }    // absorbs the next hit aimed at you
+};
 const MP_PEER_MS = 20000;             // presence expires this long after the last poll
 const mpPeers = Object.create(null);  // id -> { id, name, platform, ts, matchId }
 const invites = Object.create(null);  // id -> { id, from, fromLabel, to, ts }
@@ -56,53 +64,187 @@ function mpPrune() {
     });
 }
 function mpPlayer(peer) {
-    return { id: peer.id, label: mpLabel(peer), platform: peer.platform || "", progress: 0, wrong: 0, done: false, ms: 0, left: false };
+    return {
+        id: peer.id, label: mpLabel(peer), platform: peer.platform || "",
+        progress: 0, energy: 0, combo: 0, wrong: 0,
+        effects: [],            // { kind, until, from }
+        done: false, ms: 0, left: false
+    };
 }
 function mpCreate(peers) {
     const id = "mtc_" + (++seq);
     const m = {
         id: id, state: "countdown", createdAt: Date.now(),
         startAt: Date.now() + 4000,          // shared countdown, so nobody starts early
-        total: MP_QUESTIONS, questions: mpQuestions(MP_QUESTIONS),
+        total: MP_TASKS, tasks: mpTasks(MP_TASKS),
         players: peers.map(mpPlayer), winner: null
     };
     matches[id] = m;
     return m;
 }
-/** Both racers must get identical questions, so the server makes them. */
-function mpQuestions(n) {
-    const out = [];
-    const ri = function (a, b) { return a + Math.floor(Math.random() * (b - a + 1)); };
-    for (let i = 0; i < n; i++) {
-        const kind = i % 4, hard = i >= n / 2;
-        let text, answer;
-        if (kind === 0) { const a = ri(hard ? 12 : 3, hard ? 49 : 19), b = ri(hard ? 12 : 2, hard ? 49 : 9); text = a + " + " + b; answer = a + b; }
-        else if (kind === 1) { const a = ri(hard ? 25 : 8, hard ? 80 : 20), b = ri(2, hard ? 24 : 7); text = a + " − " + b; answer = a - b; }
-        else if (kind === 2) { const a = ri(2, hard ? 12 : 6), b = ri(2, hard ? 12 : 6); text = a + " × " + b; answer = a * b; }
-        else { const b = ri(2, hard ? 12 : 6), q = ri(2, hard ? 11 : 6); text = (b * q) + " ÷ " + b; answer = q; }
-        const choices = [answer];
-        while (choices.length < 4) {
-            const off = ri(1, Math.max(3, Math.round(Math.abs(answer) * 0.35) + 3)) * (Math.random() < 0.5 ? -1 : 1);
-            const cand = answer + off;
-            if (cand >= 0 && choices.indexOf(cand) < 0) choices.push(cand);
-        }
-        for (let j = choices.length - 1; j > 0; j--) { const k = Math.floor(Math.random() * (j + 1)); const t = choices[j]; choices[j] = choices[k]; choices[k] = t; }
-        out.push({ text: text, answer: answer, choices: choices });
+
+/* ---- the tasks that move your racer ----
+   Deliberately no arithmetic: these are visual/attention puzzles (odd one out,
+   mental rotation, Stroop, what-comes-next, pattern recall). Every one is
+   "pick 1 of 4" so the controls stay identical whichever task comes up, and the
+   answer never leaves the server — the client sends its pick and is told. */
+const SHAPES = ["circle", "square", "triangle", "star", "hexagon", "diamond"];
+const COLORS = ["red", "blue", "green", "yellow", "purple", "orange"];
+const TASK_KINDS = ["odd", "rotate", "stroop", "next", "recall"];
+
+function ri(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+}
+/** A polyomino as a list of [x,y] cells, rotated k quarter-turns in a 4x4 box. */
+function rotateCells(cells, k) {
+    let out = cells.map(function (c) { return [c[0], c[1]]; });
+    for (let n = 0; n < ((k % 4) + 4) % 4; n++) out = out.map(function (c) { return [3 - c[1], c[0]]; });
+    // normalise to the top-left so rotations are comparable as sets
+    const mx = Math.min.apply(null, out.map(function (c) { return c[0]; }));
+    const my = Math.min.apply(null, out.map(function (c) { return c[1]; }));
+    return out.map(function (c) { return [c[0] - mx, c[1] - my]; }).sort(function (a, b) { return a[1] - b[1] || a[0] - b[0]; });
+}
+function cellsKey(cells) { return cells.map(function (c) { return c.join(","); }).join(";"); }
+function randomPiece() {
+    const cells = [[1, 1]];
+    while (cells.length < ri(4, 5)) {
+        const from = pick(cells);
+        const step = pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+        const c = [from[0] + step[0], from[1] + step[1]];
+        if (c[0] < 0 || c[1] < 0 || c[0] > 3 || c[1] > 3) continue;
+        if (cells.some(function (x) { return x[0] === c[0] && x[1] === c[1]; })) continue;
+        cells.push(c);
     }
+    return rotateCells(cells, 0);
+}
+
+function mpTask(i, hard) {
+    const kind = TASK_KINDS[i % TASK_KINDS.length];
+
+    if (kind === "odd") {
+        // Four tiles; one differs in shape or colour. Attention / visual search.
+        const shape = pick(SHAPES), color = pick(COLORS);
+        const byShape = Math.random() < 0.5;
+        let other = shape, otherColor = color;
+        if (byShape) { while (other === shape) other = pick(SHAPES); }
+        else { while (otherColor === color) otherColor = pick(COLORS); }
+        const odd = ri(0, 3);
+        const items = [];
+        for (let k = 0; k < 4; k++) {
+            items.push(k === odd ? { shape: byShape ? other : shape, color: byShape ? color : otherColor }
+                                 : { shape: shape, color: color });
+        }
+        return { kind: kind, prompt: "Which one is different?", tiles: items, answer: odd };
+    }
+
+    if (kind === "rotate") {
+        // Mental rotation: which tile is the same piece, just turned?
+        const piece = randomPiece();
+        const answer = ri(0, 3);
+        const tiles = [];
+        const target = cellsKey(piece);
+        for (let k = 0; k < 4; k++) {
+            if (k === answer) { tiles.push({ cells: rotateCells(piece, ri(1, 3)) }); continue; }
+            let other = randomPiece(), guard = 0;
+            // a decoy must NOT be the same piece under any rotation
+            while (guard++ < 40 && [0, 1, 2, 3].some(function (r) { return cellsKey(rotateCells(other, r)) === target; })) other = randomPiece();
+            tiles.push({ cells: other });
+        }
+        return { kind: kind, prompt: "Which one is the same piece, turned?", target: { cells: piece }, tiles: tiles, answer: answer };
+    }
+
+    if (kind === "stroop") {
+        // Say the INK, not the word. Classic interference task.
+        const ink = pick(COLORS);
+        let word = pick(COLORS);
+        while (word === ink) word = pick(COLORS);
+        const opts = shuffled([ink].concat(shuffled(COLORS.filter(function (c) { return c !== ink; })).slice(0, 3)));
+        return { kind: kind, prompt: "Tap the COLOUR of the word", word: word.toUpperCase(), ink: ink,
+                 tiles: opts.map(function (c) { return { color: c, swatch: true }; }), answer: opts.indexOf(ink) };
+    }
+
+    if (kind === "next") {
+        // What comes next in the pattern? (shape/colour cycles, not numbers)
+        const len = hard ? 3 : 2;
+        const cycle = shuffled(SHAPES).slice(0, len);
+        const colors = shuffled(COLORS).slice(0, len);
+        const seq = [];
+        for (let k = 0; k < 5; k++) seq.push({ shape: cycle[k % len], color: colors[k % len] });
+        const right = { shape: cycle[5 % len], color: colors[5 % len] };
+        const wrongs = [];
+        while (wrongs.length < 3) {
+            const w = { shape: pick(SHAPES), color: pick(COLORS) };
+            if (w.shape === right.shape && w.color === right.color) continue;
+            if (wrongs.some(function (x) { return x.shape === w.shape && x.color === w.color; })) continue;
+            wrongs.push(w);
+        }
+        const tiles = shuffled([right].concat(wrongs));
+        return { kind: kind, prompt: "What comes next?", seq: seq, tiles: tiles,
+                 answer: tiles.findIndex(function (t) { return t.shape === right.shape && t.color === right.color; }) };
+    }
+
+    // recall: a lit pattern flashes, then pick the one you saw
+    const n = hard ? 5 : 4;
+    const all = [];
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) all.push([x, y]);
+    const litCells = shuffled(all).slice(0, n);
+    const key = cellsKey(litCells.slice().sort(function (a, b) { return a[1] - b[1] || a[0] - b[0]; }));
+    const answer = ri(0, 3);
+    const tiles = [];
+    for (let k = 0; k < 4; k++) {
+        if (k === answer) { tiles.push({ grid: litCells }); continue; }
+        let other = shuffled(all).slice(0, n), guard = 0;
+        while (guard++ < 40 && cellsKey(other.slice().sort(function (a, b) { return a[1] - b[1] || a[0] - b[0]; })) === key) other = shuffled(all).slice(0, n);
+        tiles.push({ grid: other });
+    }
+    return { kind: "recall", prompt: "Which pattern did you just see?", flash: { grid: litCells }, tiles: tiles, answer: answer };
+}
+
+function mpTasks(n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(mpTask(i, i >= n / 2));
     return out;
 }
-/** Client-safe view (the answers are needed to score locally, so they go too). */
-function mpView(m) {
+
+/** Strip a task of its answer before it goes near a client. */
+function taskView(t) {
+    const v = { kind: t.kind, prompt: t.prompt, tiles: t.tiles };
+    if (t.target) v.target = t.target;
+    if (t.seq) v.seq = t.seq;
+    if (t.flash) v.flash = t.flash;
+    if (t.word) { v.word = t.word; v.ink = t.ink; }
+    return v;
+}
+
+function liveEffects(p) {
+    const now = Date.now();
+    p.effects = (p.effects || []).filter(function (e) { return e.until > now; });
+    return p.effects;
+}
+
+/** Client-safe view. Answers stay on the server; tasks arrive one at a time. */
+function mpView(m, forId) {
     // "countdown" becomes "running" purely by the clock — both sides share startAt,
     // so nobody needs a message to tell them the race began.
     const state = (m.state === "countdown" && Date.now() >= m.startAt) ? "running" : m.state;
-    return {
-        id: m.id, state: state, startAt: m.startAt, total: m.total,
-        questions: m.questions, winner: m.winner,
+    const meP = forId ? m.players.filter(function (p) { return p.id === forId; })[0] : null;
+    const out = {
+        id: m.id, state: state, startAt: m.startAt, total: m.total, winner: m.winner,
         players: m.players.map(function (p) {
-            return { id: p.id, label: p.label, platform: p.platform, progress: p.progress, wrong: p.wrong || 0, done: !!p.done, ms: p.ms || 0, left: !!p.left };
+            return {
+                id: p.id, label: p.label, platform: p.platform, progress: p.progress,
+                energy: p.energy, combo: p.combo, wrong: p.wrong || 0,
+                done: !!p.done, ms: p.ms || 0, left: !!p.left,
+                effects: liveEffects(p).map(function (e) { return { kind: e.kind, until: e.until }; })
+            };
         })
     };
+    if (meP) out.task = meP.progress < m.total ? taskView(m.tasks[meP.progress]) : null;
+    return out;
 }
 
 function send(res, code, body, type) {
@@ -336,7 +478,7 @@ const server = http.createServer(async function (req, res) {
             invites: Object.keys(invites).map(function (k) { return invites[k]; })
                 .filter(function (v) { return v.to === me.id; })
                 .map(function (v) { return { id: v.id, from: v.from, fromLabel: v.fromLabel, ts: v.ts }; }),
-            match: match ? mpView(match) : null
+            match: match ? mpView(match, me.id) : null
         });
     }
 
@@ -371,12 +513,12 @@ const server = http.createServer(async function (req, res) {
         }
         host.matchId = match.id; me.matchId = match.id;
         match.players.forEach(function (pl) { if (mpPeers[pl.id]) mpPeers[pl.id].matchId = match.id; });
-        return send(res, 200, { ok: true, match: mpView(match) });
+        return send(res, 200, { ok: true, match: mpView(match, me.id) });
     }
 
-    // One answer submitted. The server counts progress so nobody can disagree
-    // about who got there first.
-    if (p === "/api/mp/answer" && req.method === "POST") {
+    /* One task answered. The server owns the answer key, the progress and the
+       energy — a client can only say which tile it picked. */
+    if (p === "/api/mp/task" && req.method === "POST") {
         const b = await readBody(req);
         const match = matches[b.matchId];
         if (!match) return send(res, 404, { error: "unknown match" });
@@ -384,10 +526,24 @@ const server = http.createServer(async function (req, res) {
         if (!pl) return send(res, 404, { error: "not in this match" });
         // Nothing counts before "Go" — otherwise an early tap banks progress during
         // the countdown and the finish time comes out negative.
-        if (Date.now() < match.startAt) return send(res, 200, { ok: false, early: true, match: mpView(match) });
-        if (!pl.done) {
-            if (b.correct) pl.progress = Math.min(match.total, pl.progress + 1);
-            else pl.wrong = (pl.wrong || 0) + 1;
+        if (Date.now() < match.startAt) return send(res, 200, { ok: false, early: true, match: mpView(match, pl.id) });
+        // Frozen players cannot answer; that is the whole point of the ability.
+        const frozen = liveEffects(pl).some(function (e) { return e.kind === "freeze"; });
+        if (frozen) return send(res, 200, { ok: false, frozen: true, match: mpView(match, pl.id) });
+
+        let correct = null;
+        if (!pl.done && pl.progress < match.total) {
+            const task = match.tasks[pl.progress];
+            correct = Number(b.choice) === task.answer;
+            if (correct) {
+                pl.progress++;
+                pl.combo++;
+                // Every answer charges the boost meter; a streak of three charges more.
+                pl.energy = Math.min(MP_ENERGY_MAX, pl.energy + 1 + (pl.combo % 3 === 0 ? 1 : 0));
+            } else {
+                pl.wrong = (pl.wrong || 0) + 1;
+                pl.combo = 0;
+            }
             if (pl.progress >= match.total) {
                 pl.done = true;
                 pl.ms = Math.max(1, Date.now() - match.startAt);
@@ -397,7 +553,54 @@ const server = http.createServer(async function (req, res) {
         const live = match.players.filter(function (x) { return !x.left; });
         if (live.length && live.every(function (x) { return x.done; })) match.state = "over";
         else if (match.winner) match.state = "over";   // a race ends when it is won
-        return send(res, 200, { ok: true, match: mpView(match) });
+        return send(res, 200, { ok: true, correct: correct, match: mpView(match, pl.id) });
+    }
+
+    /* Spend boost energy on a special ability. Offensive abilities always aim at
+       whoever is winning (excluding yourself), so there is no target UI to learn. */
+    if (p === "/api/mp/ability" && req.method === "POST") {
+        const b = await readBody(req);
+        const match = matches[b.matchId];
+        if (!match) return send(res, 404, { error: "unknown match" });
+        const pl = match.players.filter(function (x) { return x.id === b.deviceId; })[0];
+        if (!pl) return send(res, 404, { error: "not in this match" });
+        if (match.state === "over" || Date.now() < match.startAt) return send(res, 200, { ok: false, match: mpView(match, pl.id) });
+        const ability = MP_ABILITIES[b.kind];
+        if (!ability) return send(res, 400, { error: "unknown ability" });
+        if (pl.energy < ability.cost) return send(res, 200, { ok: false, reason: "not enough boost", match: mpView(match, pl.id) });
+
+        let targetLabel = "";
+        if (ability.self) {
+            pl.effects.push({ kind: b.kind, until: Date.now() + ability.ms, from: pl.label });
+            targetLabel = pl.label;
+        } else if (b.kind === "turbo") {
+            pl.progress = Math.min(match.total, pl.progress + ability.jump);
+            pl.combo = 0;                     // a turbo is not a streak of answers
+            if (pl.progress >= match.total) {
+                pl.done = true;
+                pl.ms = Math.max(1, Date.now() - match.startAt);
+                if (!match.winner) match.winner = pl.id;
+                match.state = "over";
+            }
+            targetLabel = pl.label;
+        } else {
+            // aim at the leader who is not me and has not finished or left
+            const others = match.players.filter(function (x) { return x.id !== pl.id && !x.left && !x.done; })
+                .sort(function (a, c) { return c.progress - a.progress; });
+            if (!others.length) return send(res, 200, { ok: false, reason: "nobody to aim at", match: mpView(match, pl.id) });
+            const target = others[0];
+            const shielded = liveEffects(target).some(function (e) { return e.kind === "shield"; });
+            if (shielded) {
+                // A shield absorbs one hit and is used up doing it.
+                target.effects = target.effects.filter(function (e) { return e.kind !== "shield"; });
+                targetLabel = target.label + " (blocked!)";
+            } else {
+                target.effects.push({ kind: b.kind, until: Date.now() + ability.ms, from: pl.label });
+                targetLabel = target.label;
+            }
+        }
+        pl.energy -= ability.cost;
+        return send(res, 200, { ok: true, used: b.kind, target: targetLabel, match: mpView(match, pl.id) });
     }
 
     // Leave the lobby or bail out of a race.

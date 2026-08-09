@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.10.1";
+    var VERSION = "1.11.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -690,7 +690,95 @@
 
     /* ---------- Settings open freely ----------
        The PIN gate was removed: it got in the way far more than it helped. */
-    function openSettings() { go("settings"); }
+    /* ============================================================
+       Adult PIN on Settings
+       Settings is where games get switched off, kiosk gets toggled and time
+       limits live, so it is gated. Unlocking lasts until the app restarts —
+       "enter it once, then change things freely" — and only Settings is gated:
+       the 7-tap kiosk escape stays open, because a PIN in front of the way out
+       is exactly what was annoying before.
+       ============================================================ */
+    var ADULT_PIN = "2580";
+    var pinUnlocked = false;
+
+    function openSettings() {
+        if (pinUnlocked) { go("settings"); return; }
+        askPin(function () { pinUnlocked = true; go("settings"); });
+    }
+
+    /** Big-button keypad. Works with touch, a keyboard and a TV remote. */
+    function askPin(onOk) {
+        var entered = "";
+        var ov = el("div", { class: "overlay" });
+        var panel = el("div", { class: "panel pop pin-panel" });
+        panel.appendChild(el("div", { class: "big", html: "&#128274;" }));
+        panel.appendChild(el("h2", { text: "Grown-ups only" }));
+        panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 14px", text: "Enter the adult PIN to open Settings." }));
+        var dots = el("div", { class: "pin-dots" });
+        var dotEls = [];
+        for (var d = 0; d < 4; d++) { var dot = el("i"); dotEls.push(dot); dots.appendChild(dot); }
+        panel.appendChild(dots);
+        var pad = el("div", { class: "pin-pad" });
+        var keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "del", "0", "ok"];
+        var btns = {};
+        keys.forEach(function (k) {
+            var b = el("button", {
+                class: "pin-key" + (k === "ok" ? " go" : k === "del" ? " del" : ""),
+                html: k === "del" ? "&#9003;" : k === "ok" ? "&#10003;" : k
+            });
+            b.addEventListener("click", function () { press(k); });
+            btns[k] = b;
+            pad.appendChild(b);
+        });
+        panel.appendChild(pad);
+        var err = el("div", { class: "pin-err", hidden: "hidden", text: "That is not the PIN" });
+        panel.appendChild(err);
+        panel.appendChild(el("button", { class: "btn ghost", style: "width:100%;margin-top:12px", text: "Cancel",
+            onclick: function () { close(); } }));
+        ov.appendChild(panel);
+        document.body.appendChild(ov);
+        paint();
+        // Keep the keypad usable from a keyboard/remote without stealing game keys.
+        document.addEventListener("keydown", onKey, true);
+        setTimeout(function () { try { btns["1"].focus(); } catch (e) {} }, 30);
+
+        function paint() {
+            dotEls.forEach(function (x, i) { x.className = i < entered.length ? "on" : ""; });
+        }
+        function press(k) {
+            Sound.click(); haptic(8);
+            err.hidden = true;
+            if (k === "del") { entered = entered.slice(0, -1); paint(); return; }
+            if (k === "ok") { submit(); return; }
+            if (entered.length >= 4) return;
+            entered += k;
+            paint();
+            if (entered.length === 4) setTimeout(submit, 140);
+        }
+        function submit() {
+            if (entered === ADULT_PIN) {
+                Sound.good(); haptic(18);
+                close();
+                if (onOk) onOk();
+            } else {
+                Sound.bad(); haptic(40);
+                entered = ""; paint();
+                err.hidden = false;
+                panel.classList.remove("shake"); void panel.offsetWidth; panel.classList.add("shake");
+            }
+        }
+        function onKey(ev) {
+            if (!ov.parentNode) return;
+            if (ev.key >= "0" && ev.key <= "9") { press(ev.key); ev.preventDefault(); ev.stopPropagation(); }
+            else if (ev.key === "Backspace") { press("del"); ev.preventDefault(); ev.stopPropagation(); }
+            else if (ev.key === "Enter") { press("ok"); ev.preventDefault(); ev.stopPropagation(); }
+            else if (ev.key === "Escape") { close(); ev.preventDefault(); ev.stopPropagation(); }
+        }
+        function close() {
+            document.removeEventListener("keydown", onKey, true);
+            if (ov.parentNode) ov.parentNode.removeChild(ov);
+        }
+    }
 
     /* ============================================================
        Kiosk mode — built in (replaces the separate "Kiosk Lock" app)

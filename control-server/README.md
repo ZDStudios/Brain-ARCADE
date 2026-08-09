@@ -47,7 +47,8 @@ node server.js         # http://localhost:3000
 | POST   | `/api/mp/sync`   | Multiplayer lobby poll: `{deviceId, name, platform}` → `{peers, invites, match}` |
 | POST   | `/api/mp/invite` | `{deviceId, to}` — ask another device to race |
 | POST   | `/api/mp/respond`| `{deviceId, inviteId, accept}` → the match (a second accept joins the same one, up to 3 racers) |
-| POST   | `/api/mp/answer` | `{deviceId, matchId, correct}` — the server counts progress and decides the winner |
+| POST   | `/api/mp/task`   | `{deviceId, matchId, choice}` — the server checks the answer, counts progress and boost, and decides the winner |
+| POST   | `/api/mp/ability`| `{deviceId, matchId, kind}` — spend boost on turbo / freeze / scramble / shield |
 | POST   | `/api/mp/quit`   | `{deviceId, matchId, leaveLobby}` |
 
 Multiplayer presence is deliberately separate from the heartbeat device list: a

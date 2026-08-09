@@ -31,17 +31,41 @@ The 3D is hand-rolled on a plain 2D canvas (rotate, project, paint faces back to
 front). No WebGL and no libraries, so it renders identically in the app's WebView,
 in a browser, on a TV, and **offline** like everything else.
 
-## 🏁 Brain Race (multiplayer)
+## 🏁 Brain Race 3D (multiplayer)
 The one game that needs a connection, so its card only appears when the device is on
 WiFi **and** the control server answered its last heartbeat. Every other game stays
 exactly as available as before.
 
-Open Brain Arcade on two (or three) devices, tap **Brain Race** on each, and they see
-each other listed by device name — or by what they are running (`iPad`, `Android TV`,
-`Windows PC`) when a name was never set. Pick one, they accept, both count down
-together and race through the same ten questions. The server generates the questions
-and counts progress, so both sides always agree on who is ahead and who won. Invite
-two devices and all three race at once.
+Two or three devices race down a **3D track** — same hand-rolled projection as Cube
+Recall, with a camera that follows your own craft, lane markers streaming past, a
+checkered finish gate ahead and a "▼ 3 behind" tag for anyone off camera.
+
+**You do not steer — you move by solving tasks, and none of them are sums:**
+
+| Task | What it trains |
+| --- | --- |
+| Which one is different? | visual search / attention |
+| Which piece is the same, turned? | mental rotation |
+| Tap the COLOUR of the word | Stroop interference |
+| What comes next? | pattern completion |
+| Which pattern did you just see? | visual working memory |
+
+Every correct answer charges a **BOOST** meter (a clean three-in-a-row pays a bonus),
+and boost buys **special abilities**:
+
+| Ability | Cost | Effect |
+| --- | --- | --- |
+| ⚡ Turbo | 3 | Jump two lengths up the track |
+| 🧊 Freeze | 4 | The leader cannot answer for 3 seconds |
+| 🌀 Scramble | 2 | The leader's tiles shuffle for 8 seconds |
+| 🛡️ Shield | 3 | Absorbs the next hit aimed at you |
+
+Offensive abilities aim at whoever is leading (never yourself), so there is no target
+UI to learn. Devices are listed by their own name, or by what they are running
+(`iPad`, `Android TV`, `Windows PC`) when a name was never set.
+
+The server owns the answer key, the progress and the energy — a client only ever says
+"I picked tile 2", and tasks arrive one at a time.
 
 ## 🌐 Server URL is built in
 Fresh installs already point at <https://brain-arcade-control.onrender.com> — nobody
@@ -82,8 +106,16 @@ Screen pinning is deliberately *not* used. It blocked the app's own updater (the
 installer opened for a split second and bounced back) and needed a fiddly escape
 gesture. As the Home app, normal things like installing an update still work.
 
+### Adult PIN on Settings
+Settings is where games get switched off, kiosk gets toggled and time limits live, so
+opening it asks for the adult PIN **2580** on a big keypad (typeable on a keyboard or
+TV remote). Enter it once and you can change things freely until the app restarts.
+
+Only Settings is gated. The 7-tap kiosk escape is deliberately **not** behind the PIN —
+a PIN in front of the way out is what made this annoying the first time round.
+
 ### Getting out
-Three ways, none of them needing a PIN:
+Three ways:
 
 | Where | What it does |
 | --- | --- |
