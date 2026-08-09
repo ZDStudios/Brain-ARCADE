@@ -1,6 +1,6 @@
 {
-  "versionCode": 18,
-  "versionName": "1.11.0",
+  "versionCode": 19,
+  "versionName": "1.11.1",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "The Settings PIN (2580) is now asked for every time Settings is opened, instead of staying unlocked until the app restarted."
 }
