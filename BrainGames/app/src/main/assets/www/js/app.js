@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.11.0";
+    var VERSION = "1.11.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -693,17 +693,19 @@
     /* ============================================================
        Adult PIN on Settings
        Settings is where games get switched off, kiosk gets toggled and time
-       limits live, so it is gated. Unlocking lasts until the app restarts —
-       "enter it once, then change things freely" — and only Settings is gated:
-       the 7-tap kiosk escape stays open, because a PIN in front of the way out
-       is exactly what was annoying before.
+       limits live, so it is gated. The keypad appears EVERY time Settings is
+       opened — an unlock that lasted the whole session meant that handing the
+       tablet over after changing a setting left Settings wide open. Screens
+       redrawn while you are already inside Settings call renderSettings()
+       directly, so nothing re-prompts mid-visit.
+
+       Only Settings is gated: the 7-tap kiosk escape stays open, because a PIN
+       in front of the way out is exactly what was annoying before.
        ============================================================ */
     var ADULT_PIN = "2580";
-    var pinUnlocked = false;
 
     function openSettings() {
-        if (pinUnlocked) { go("settings"); return; }
-        askPin(function () { pinUnlocked = true; go("settings"); });
+        askPin(function () { go("settings"); });
     }
 
     /** Big-button keypad. Works with touch, a keyboard and a TV remote. */

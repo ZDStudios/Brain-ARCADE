@@ -109,7 +109,9 @@ gesture. As the Home app, normal things like installing an update still work.
 ### Adult PIN on Settings
 Settings is where games get switched off, kiosk gets toggled and time limits live, so
 opening it asks for the adult PIN **2580** on a big keypad (typeable on a keyboard or
-TV remote). Enter it once and you can change things freely until the app restarts.
+TV remote). The keypad appears **every** time Settings is opened — an unlock that
+lasted the whole session meant handing the tablet over after changing one setting left
+Settings wide open. Nothing re-prompts while you are already inside Settings.
 
 Only Settings is gated. The 7-tap kiosk escape is deliberately **not** behind the PIN —
 a PIN in front of the way out is what made this annoying the first time round.
