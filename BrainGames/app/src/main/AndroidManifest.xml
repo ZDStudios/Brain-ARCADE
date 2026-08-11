@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Kiosk: relaunch after a reboot so the tablet/TV comes back locked. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Haptics, and the "find my tablet" alarm. VIBRATE was missing, which is why
+         the haptics setting never actually buzzed anything. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Turning the volume up for the find-my-tablet alarm. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- Android TV: run without a touchscreen, and don't require Leanback so the
          same APK still installs on phones and tablets. -->

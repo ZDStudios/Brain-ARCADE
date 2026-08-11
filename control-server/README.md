@@ -44,6 +44,7 @@ node server.js         # http://localhost:3000
 | GET    | `/api/devices`   | list of devices + online status + policy |
 | POST   | `/api/policy`    | `{deviceId, locked, allowedGames}` (header `X-Admin-Token` if set) |
 | GET    | `/api/config`    | `{authRequired}` |
+| POST   | `/api/command`   | `{deviceId, action}` — `update`, `popup`, `stream`, `kiosk`, `leave`, or `find` (`{on}`) to ring the device until it is stopped |
 | POST   | `/api/mp/sync`   | Multiplayer lobby poll: `{deviceId, name, platform}` → `{peers, invites, match}` |
 | POST   | `/api/mp/invite` | `{deviceId, to}` — ask another device to race |
 | POST   | `/api/mp/respond`| `{deviceId, inviteId, accept}` → the match (a second accept joins the same one, up to 3 racers) |

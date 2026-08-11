@@ -15,6 +15,8 @@ import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -54,7 +56,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.11.1";
+    private static final String BUNDLED_VERSION = "1.12.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -62,6 +64,12 @@ public class MainActivity extends Activity {
     private WebView webView;
     private SharedPreferences prefs;
     private DevicePolicyManager dpm;
+
+    /* ---- "find my tablet" alarm ---- */
+    private ToneGenerator findTone;
+    private Thread findThread;
+    private volatile boolean finding = false;
+    private int volBeforeFind = -1, alarmVolBeforeFind = -1;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -287,6 +295,81 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    /* ================= Find my tablet =================
+       Turns the volume up, buzzes and beeps so a tablet lost under a sofa cushion
+       can be heard. Deliberately loud and deliberately stoppable only from the
+       device (or the dashboard), and it restores the volume it found so a parent
+       is not left with a tablet permanently at maximum.                        */
+
+    private boolean startFindInternal() {
+        if (finding) return true;
+        finding = true;
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am != null) {
+                // Remember what it was, so stopping puts it back.
+                if (volBeforeFind < 0) volBeforeFind = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+                if (alarmVolBeforeFind < 0) alarmVolBeforeFind = am.getStreamVolume(AudioManager.STREAM_ALARM);
+                setStreamMax(am, AudioManager.STREAM_MUSIC);
+                setStreamMax(am, AudioManager.STREAM_ALARM);
+            }
+        } catch (Exception ignored) {}
+
+        // Repeating buzz. A waveform with a repeat index keeps going until cancelled.
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                long[] pattern = { 0, 600, 300, 600, 900 };
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0));
+                } else {
+                    v.vibrate(pattern, 0);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Beeping on the ALARM stream, which is audible even when media is muted.
+        try {
+            if (findTone == null) findTone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+            final ToneGenerator tg = findTone;
+            findThread = new Thread(new Runnable() { public void run() {
+                while (finding) {
+                    try {
+                        tg.startTone(ToneGenerator.TONE_CDMA_HIGH_L, 700);
+                        Thread.sleep(950);
+                    } catch (InterruptedException e) { return; } catch (Exception e) { return; }
+                }
+            } });
+            findThread.start();
+        } catch (Exception ignored) {}
+        return true;
+    }
+
+    private void setStreamMax(AudioManager am, int stream) {
+        try { am.setStreamVolume(stream, am.getStreamMaxVolume(stream), 0); }
+        catch (Exception ignored) { /* Do Not Disturb can refuse this; the buzz still works */ }
+    }
+
+    private void stopFindInternal() {
+        finding = false;
+        try { if (findThread != null) findThread.interrupt(); } catch (Exception ignored) {}
+        findThread = null;
+        try { if (findTone != null) { findTone.stopTone(); findTone.release(); } } catch (Exception ignored) {}
+        findTone = null;
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.cancel();
+        } catch (Exception ignored) {}
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am != null) {
+                if (volBeforeFind >= 0) am.setStreamVolume(AudioManager.STREAM_MUSIC, volBeforeFind, 0);
+                if (alarmVolBeforeFind >= 0) am.setStreamVolume(AudioManager.STREAM_ALARM, alarmVolBeforeFind, 0);
+            }
+        } catch (Exception ignored) {}
+        volBeforeFind = -1; alarmVolBeforeFind = -1;
+    }
+
     /** Open Android's Home-app picker, stepping out of any pin so it can actually show. */
     private void openHomeSettingsInternal() {
         setHomeAliasEnabled(true);
@@ -302,6 +385,13 @@ public class MainActivity extends Activity {
                 startActivity(i2);
             } catch (Exception ignored) {}
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Never leave a tablet buzzing at full volume because the app was closed.
+        stopFindInternal();
+        super.onDestroy();
     }
 
     @Override
@@ -710,6 +800,30 @@ public class MainActivity extends Activity {
         /** True when some other launcher exists to hand Home back to. */
         @JavascriptInterface
         public boolean hasOtherLauncher() { return hasOtherLauncherInternal(); }
+
+        /* ---------- find my tablet ---------- */
+
+        /** Volume to maximum, buzz and beep until stopFind(). Returns true if it started. */
+        @JavascriptInterface
+        public boolean startFind() {
+            final boolean[] ok = { false };
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            runOnUiThread(new Runnable() { public void run() {
+                try { ok[0] = startFindInternal(); } catch (Exception ignored) {} finally { latch.countDown(); }
+            } });
+            try { latch.await(3, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+            return ok[0];
+        }
+
+        /** Silence it and put the volume back where it was. */
+        @JavascriptInterface
+        public void stopFind() {
+            runOnUiThread(new Runnable() { public void run() { stopFindInternal(); } });
+        }
+
+        /** True while the alarm is sounding. */
+        @JavascriptInterface
+        public boolean isFinding() { return finding; }
 
         /** The name of that other launcher (e.g. "Pixel Launcher"), or "" if there is none. */
         @JavascriptInterface

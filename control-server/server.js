@@ -290,6 +290,7 @@ const server = http.createServer(async function (req, res) {
         devices[b.deviceId] = {
             id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(),
             platform: b.platform ? String(b.platform).slice(0, 40) : (prev.platform || ""),
+            canFind: b.canFind === undefined ? !!prev.canFind : !!b.canFind,
             battery: bat, games: games, canStream: !!b.canStream,
             canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv,
             stats: (b.stats && typeof b.stats === "object") ? b.stats : (prev.stats || null),
@@ -297,6 +298,10 @@ const server = http.createServer(async function (req, res) {
         };
         const pol = policies[b.deviceId] || defaultPolicy();
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
+
+        // The device reports when the alarm was stopped on it, so the dashboard
+        // button flips back without the parent having to guess.
+        if (b.findStopped) cmd.findOn = false;
 
         // --- score backup / restore (keyed by the device's stable id) ---
         if (b.clearScores) { scores[b.deviceId] = {}; }
@@ -319,6 +324,7 @@ const server = http.createServer(async function (req, res) {
             // "let them out": step the tablet out to its normal home screen without
             // changing the kiosk setting.
             leave: cmd.leaveAt || null,
+            find: { on: !!cmd.findOn, ts: cmd.findAt || 0 },
             stream: !!cmd.stream,
             input: taps,
             scoresBackup: scores[b.deviceId] || null
@@ -370,6 +376,8 @@ const server = http.createServer(async function (req, res) {
                 games: d.games || null,
                 canStream: !!d.canStream,
                 canKiosk: !!d.canKiosk, kiosk: !!d.kiosk, tv: !!d.tv,
+                canFind: !!d.canFind,
+                finding: !!cmd.findOn,
                 streaming: !!cmd.stream,
                 hasFrame: !!(fr && (now - fr.ts) < 15000),
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
@@ -389,6 +397,9 @@ const server = http.createServer(async function (req, res) {
         else if (b.action === "stream") { cmd.stream = !!b.on; if (!b.on) delete frames[b.deviceId]; }
         else if (b.action === "kiosk") { cmd.kioskOn = !!b.on; cmd.kioskAt = Date.now(); }
         else if (b.action === "leave") { cmd.leaveAt = Date.now(); }
+        // "Where is it?" — ring the device until somebody stops it, on the device
+        // or from here.
+        else if (b.action === "find") { cmd.findOn = !!b.on; cmd.findAt = Date.now(); }
         return send(res, 200, { ok: true });
     }
 

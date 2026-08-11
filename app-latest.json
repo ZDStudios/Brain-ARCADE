@@ -2,5 +2,5 @@
   "versionCode": 19,
   "versionName": "1.11.1",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "The Settings PIN (2580) is now asked for every time Settings is opened, instead of staying unlocked until the app restarted."
+  "notes": "New: Find this tablet. The dashboard rings the device at full volume with a buzz and a beep, and a big STOP button appears on it. Also fixes vibration, which never worked because the VIBRATE permission was missing."
 }

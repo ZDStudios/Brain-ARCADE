@@ -756,3 +756,15 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
     60% { transform:translateX(-5px); } 80% { transform:translateX(4px); }
 }
 :root.tv .pin-key { padding:20px 0; font-size:26px; }
+
+/* --- find my tablet --- */
+.find-overlay { background:rgba(244,63,94,.35); backdrop-filter:blur(4px); z-index:120;
+    animation:findPulse 1s ease-in-out infinite alternate; }
+@keyframes findPulse { from { background:rgba(244,63,94,.28); } to { background:rgba(251,146,60,.45); } }
+.find-panel { max-width:340px; text-align:center; }
+.find-ico { font-size:60px; line-height:1; animation:findShake .55s ease-in-out infinite; }
+@keyframes findShake {
+    0%,100% { transform:rotate(-13deg); } 50% { transform:rotate(13deg); }
+}
+.find-stop { width:100%; font-size:24px; padding:20px 0; letter-spacing:1px; }
+:root.tv .find-stop { font-size:30px; padding:26px 0; }

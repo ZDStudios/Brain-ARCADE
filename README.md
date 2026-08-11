@@ -133,6 +133,24 @@ real launcher rather than closing, since closing the launcher would just show it
 again. If Brain Arcade is the *only* launcher installed it stays as Home on purpose
 (the device would otherwise have no home screen) and the app explains that.
 
+## 🔊 Find this tablet
+Lost down the back of the sofa? **🔊 Find this tablet** on the dashboard rings it:
+volume to maximum on both the media and alarm streams, a repeating buzz, and a loud
+beep, plus a full-screen shaking panel on the device with one big **STOP** button.
+
+- Stopping it on the device also tells the server, so the dashboard button flips back
+  from **🔇 Stop ringing** on its own — no guessing whether it worked.
+- You can also stop it remotely from the dashboard.
+- It puts the volume back exactly where it found it, so a parent is not left with a
+  tablet stuck at maximum.
+- It gives up after 3 minutes, and never survives the app closing.
+- On a device still running an older APK the full-screen panel and a WebAudio siren
+  still play; the volume change and the buzz need the current APK, and the dashboard
+  says so before you ring it.
+
+This also fixed a long-standing bug: `android.permission.VIBRATE` was never declared,
+so the Haptics setting had never actually buzzed anything.
+
 ## 📺 Android TV
 The APK installs on Android TV and appears on the TV home screen (Leanback launcher
 with a banner). The whole UI is drivable with a **remote or D-pad**: arrows move a

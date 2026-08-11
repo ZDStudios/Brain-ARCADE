@@ -185,6 +185,7 @@ function render(devices){
                 '<button class="btn" data-scores="'+d.id+'">&#128202; Scores &amp; stats</button>'+
                 '<button class="btn'+(d.kiosk?' active':'')+'" data-kiosk="'+d.id+'" data-on="'+(d.kiosk?'0':'1')+'">'+(d.kiosk?'&#128275; Exit kiosk':'&#128274; Kiosk mode')+'</button>'+
                 '<button class="btn" data-leave="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128682; Let them out</button>'+
+                '<button class="btn'+(d.finding?' danger active':'')+'" data-find="'+d.id+'" data-on="'+(d.finding?'0':'1')+'"'+(d.online?'':' disabled style="opacity:.5"')+'>'+(d.finding?'&#128263; Stop ringing':'&#128266; Find this tablet')+'</button>'+
                 '<button class="btn" data-msg="'+d.id+'">&#128172; Send message</button>'+
                 '<button class="btn" data-remote="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128241; Remote control</button>'+
                 '<button class="btn" data-update="'+d.id+'">&#11015;&#65039; Update app</button>'+
@@ -226,6 +227,14 @@ function wire(){
         if(on && !confirm("Lock this device to Brain Arcade only?\n\nBrain Arcade becomes the home screen, so the tablet always comes back to it. You can still get out — from here, in Settings → Leave Brain Arcade on the device, or with 7 taps in the top-left corner.")) return;
         fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"kiosk",on:on})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent=on?"Kiosk queued ✓":"Exit queued ✓"; }); }; });
+    // Ring the tablet so it can be found down the back of the sofa.
+    document.querySelectorAll("[data-find]").forEach(function(b){ b.onclick=function(){ if(b.disabled) return;
+        var id=b.getAttribute("data-find"), on=b.getAttribute("data-on")==="1";
+        var d=lastDevices.filter(function(x){return x.id===id;})[0];
+        if(on && d && d.canFind===false && !confirm("This device is on an older app version.\n\nIt will still show a full-screen alarm and play a siren, but turning the volume up and buzzing needs the latest APK. Ring it anyway?")) return;
+        fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"find",on:on})})
+        .then(function(r){ if(r.status===401){alert("Wrong admin token");return;}
+            b.textContent=on?"Ringing…":"Stopping…"; setTimeout(poll,600); }); }; });
     // Step the tablet out to its normal home screen without changing kiosk mode.
     document.querySelectorAll("[data-leave]").forEach(function(b){ b.onclick=function(){ if(b.disabled) return;
         var id=b.getAttribute("data-leave");

@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.11.1";
+    var VERSION = "1.12.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1067,6 +1067,7 @@
     }
     var pollTimer = null;
     var pendingClearScores = false;
+    var pendingFindStopped = false;
     function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms || 15000); }
     function setGovern(v) { if (serverGoverns !== v) { serverGoverns = v; refreshPolicyUI(); } }
     // Current best scores, so the server can back them up (survives reinstall).
@@ -1104,12 +1105,14 @@
                 todayMs: (screenTime.day === todayKey() ? screenTime.ms : 0), limitMin: limitMin()
             },
             platform: platformLabel(),
+            canFind: canFindNative(),
             canStream: canCapture(),   // true only in the installed app (needs native screen capture)
             canKiosk: kioskSupported(),
             kiosk: kioskOn(),
             tv: tvActive()
         };
         if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
+        if (pendingFindStopped) { body.findStopped = true; pendingFindStopped = false; }
         fetch(serverUrl() + "/api/heartbeat", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -1152,11 +1155,102 @@
             save("lastLeave", data.leave);
             if (canLeaveApp()) leaveApp();
         }
+        // "Where is it?" — ring until somebody stops it here or on the dashboard.
+        if (data.find) {
+            if (data.find.on && !findingNow) startFind();
+            else if (!data.find.on && findingNow) stopFind(true);
+        }
         // On-demand screen streaming (only while the dashboard asks for it).
         if (data.stream) startStream(); else stopStream();
         // Replay any remote taps queued by the dashboard.
         if (Array.isArray(data.input) && data.input.length) data.input.forEach(applyRemoteInput);
         if (changed) refreshPolicyUI();
+    }
+
+    /* ============================================================
+       Find my tablet
+       The dashboard rings the device: volume to maximum, a repeating buzz and a
+       loud beep, plus a full-screen panel with one big STOP button. The native
+       side does the volume and the vibration (and puts the volume back where it
+       found it); a WebAudio siren runs as well, so a device on an older APK
+       still makes a noise instead of doing nothing at all.
+       ============================================================ */
+    var findingNow = false, findSiren = null, findAutoStop = null;
+
+    function canFindNative() {
+        try { return !!(window.AndroidBridge && typeof window.AndroidBridge.startFind === "function"); }
+        catch (e) { return false; }
+    }
+
+    function startFind() {
+        if (findingNow) return;
+        findingNow = true;
+        if (canFindNative()) bridgeCall("startFind", null);
+        startSiren();
+        // A tablet that rings forever is worse than a lost one; stop after 3 minutes.
+        clearTimeout(findAutoStop);
+        findAutoStop = setTimeout(function () { stopFind(true); }, 180000);
+        renderFindPanel();
+    }
+
+    function stopFind(silent) {
+        if (!findingNow) return;
+        findingNow = false;
+        clearTimeout(findAutoStop);
+        if (canFindNative()) bridgeCall("stopFind", null);
+        stopSiren();
+        removeFindPanel();
+        // Tell the server straight away so the dashboard button flips back.
+        pendingFindStopped = true;
+        schedulePoll(200);
+        if (!silent) toast("&#128266; Alarm stopped");
+    }
+
+    /** A rising/falling two-tone siren, looped through WebAudio. */
+    function startSiren() {
+        stopSiren();
+        var c = ac(); if (!c) return;
+        try {
+            var o = c.createOscillator(), g = c.createGain();
+            o.type = "square";
+            g.gain.value = 0.22;                 // loud on purpose — this is an alarm
+            o.connect(g); g.connect(c.destination);
+            var t = c.currentTime;
+            o.frequency.setValueAtTime(700, t);
+            // Schedule a couple of minutes of warble up front; cheap and gapless.
+            for (var i = 0; i < 240; i++) {
+                o.frequency.setValueAtTime(i % 2 ? 700 : 1050, t + i * 0.45);
+            }
+            o.start(t);
+            findSiren = { o: o, g: g };
+        } catch (e) { findSiren = null; }
+    }
+    function stopSiren() {
+        if (!findSiren) return;
+        try { findSiren.o.stop(); } catch (e) {}
+        try { findSiren.o.disconnect(); findSiren.g.disconnect(); } catch (e) {}
+        findSiren = null;
+    }
+
+    var findPanel = null;
+    function renderFindPanel() {
+        removeFindPanel();
+        findPanel = el("div", { class: "overlay find-overlay" });
+        var panel = el("div", { class: "panel pop find-panel" }, [
+            el("div", { class: "find-ico", html: "&#128266;" }),
+            el("h2", { text: "Here I am!" }),
+            el("p", { class: "small-note", style: "margin:0 0 16px",
+                text: "Someone is looking for this tablet. Tap Stop when you have found it." }),
+            el("button", { class: "btn primary find-stop", html: "&#9209;&#65039; STOP",
+                onclick: function () { stopFind(); } })
+        ]);
+        findPanel.appendChild(panel);
+        document.body.appendChild(findPanel);
+        try { panel.querySelector(".find-stop").focus(); } catch (e) {}
+    }
+    function removeFindPanel() {
+        if (findPanel && findPanel.parentNode) findPanel.parentNode.removeChild(findPanel);
+        findPanel = null;
     }
 
     /* ---------- remote pop-up message ---------- */
