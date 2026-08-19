@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.12.0";
+    var VERSION = "1.13.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -625,7 +625,7 @@
         chess: "strategy", reversi: "strategy", c4: "strategy", ttt: "strategy", solitaire: "strategy",
         snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
         memory: "memory", simon: "memory", stroop: "memory", cube3d: "memory",
-        race: "versus"
+        race: "versus", watersort: "puzzle"
     };
     function categoryOf(id) { return GAME_CATEGORY[id] || "arcade"; }
 
@@ -980,16 +980,66 @@
         function redraw() { close(); openGameManager(); }
     }
 
-    /* ---------- api passed to games ---------- */
-    var liveState = null; // latest in-progress state for resume (set via api.saveState)
+    /* ---------- api passed to games ----------
+       Session saving: a game calls api.saveState(s) whenever something changes and
+       the state is written straight to storage (throttled), NOT just remembered in
+       memory. It used to be persisted only in teardown(), which meant the one case
+       that matters — the app being killed, the tablet rebooting, an OTA reload —
+       saved nothing at all. Now being "kicked out" is exactly as recoverable as
+       tapping Back.                                                              */
+    var liveState = null;        // latest in-progress state for resume
+    var liveDef = null;          // which game it belongs to
+    var saveTimer = null, lastSaveAt = 0;
+    var SAVE_THROTTLE = 700;
+
+    function resumeKey(id) { return "resume_" + id; }
+    function writeResume(def, state, difficulty) {
+        if (!def || state == null) return;
+        save(resumeKey(def.id), {
+            state: state,
+            difficulty: difficulty || (current && current.difficulty) || "medium",
+            ts: Date.now(),
+            name: def.name
+        });
+    }
+    /** Persist now, cancelling any pending throttled write. */
+    function flushResume() {
+        clearTimeout(saveTimer); saveTimer = null;
+        if (liveDef && liveState != null) { writeResume(liveDef, liveState); lastSaveAt = Date.now(); }
+    }
+    function queueResume() {
+        var since = Date.now() - lastSaveAt;
+        if (since >= SAVE_THROTTLE) { flushResume(); return; }
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushResume, SAVE_THROTTLE - since);
+    }
+    // The events that fire when a tablet is yanked away mid-game.
+    document.addEventListener("visibilitychange", function () { if (document.hidden) flushResume(); });
+    window.addEventListener("pagehide", flushResume);
+    window.addEventListener("beforeunload", flushResume);
+
+    /** Every game that has something to come back to. */
+    function savedGames() {
+        var out = [];
+        GAMES.forEach(function (g) {
+            var sv = load(resumeKey(g.id), null);
+            if (sv && sv.ts && sv.state != null && (Date.now() - sv.ts) < RESUME_WINDOW) out.push({ def: g, saved: sv });
+        });
+        return out.sort(function (a, b) { return b.saved.ts - a.saved.ts; });
+    }
+    function dropResume(id) {
+        try { LS.removeItem("ba_" + resumeKey(id)); } catch (e) {}
+        if (liveDef && liveDef.id === id) { liveState = null; clearTimeout(saveTimer); saveTimer = null; }
+    }
+
     function makeApi(def, difficulty, resumeState) {
         return {
             el: el, sound: Sound, haptic: haptic, toast: toast, overlay: overlay,
             space: space, isTablet: isTablet,
             difficulty: difficulty || "medium",
             resumeState: resumeState || null,
-            saveState: function (s) { liveState = s; },
-            clearState: function () { liveState = null; try { LS.removeItem("ba_resume_" + def.id); } catch (e) {} },
+            saveState: function (s) { liveState = s; liveDef = def; queueResume(); },
+            clearState: function () { liveState = null; liveDef = null; dropResume(def.id); },
             getBest: function () { return getBest(def.id); },
             setBest: function (v) { return setBest(def.id, v, def.best || "high"); },
             save: function (k, v) { save(def.id + "_" + k, v); },
@@ -1384,6 +1434,26 @@
             view.appendChild(card);
         }
 
+        // ---- Unfinished games: pick up exactly where you were ----
+        var unfinished = savedGames().filter(function (u) { return allowed(u.def.id) && gameAvailable(u.def); });
+        if (unfinished.length) {
+            view.appendChild(el("div", { class: "section-label", html: "&#9208;&#65039; Carry on" }));
+            var cstrip = el("div", { class: "resume-strip" });
+            unfinished.slice(0, 4).forEach(function (u) {
+                var card = el("button", { class: "resume-card" }, [
+                    el("span", { class: "rs-ico", html: u.def.icon || "&#127918;", style: "background:" + (u.def.gradient || "#7C5CFF") }),
+                    el("span", { class: "rs-main" }, [
+                        el("span", { class: "rs-name", text: u.def.name }),
+                        el("span", { class: "rs-when", text: fmtWhen(u.saved.ts) })
+                    ]),
+                    el("span", { class: "rs-go", html: "&#9654;&#65039;" })
+                ]);
+                card.addEventListener("click", function () { Sound.click(); haptic(10); openGame(u.def); });
+                cstrip.appendChild(card);
+            });
+            view.appendChild(cstrip);
+        }
+
         // ---- Recently played ----
         var recentDefs = recent().map(function (id) {
             for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -1489,7 +1559,10 @@
     // screen (e.g. Block Blast's piece tray on a 720p TV). Measured after mount.
     var fitExtra = 0, fitAttempts = 0;
 
-    var RESUME_WINDOW = 30000; // 30s: offer to continue if you come back this quickly
+    // A week. The old 30-second window only covered "I tapped Back by mistake";
+    // it did nothing for the case people actually hit — coming back to the tablet
+    // later and finding the half-finished puzzle gone.
+    var RESUME_WINDOW = 7 * 24 * 60 * 60 * 1000;
     var DIFFS = [
         { id: "easy", label: "Easy", sub: "Ages ~6–8", emoji: "&#128522;" },
         { id: "medium", label: "Medium", sub: "Ages ~9–12", emoji: "&#128513;" },
@@ -1506,8 +1579,10 @@
         clearOverlays(); removeHelpFab();
         document.getElementById("backBtn").hidden = false;
         view.innerHTML = "";
-        var saved = def.resumable ? load("resume_" + def.id, null) : null;
-        if (saved && saved.ts && (Date.now() - saved.ts) < RESUME_WINDOW && saved.state) {
+        // Any game with a saved state gets the prompt, whether or not it has a
+        // difficulty chooser — the "middle menu" comes up either way.
+        var saved = load(resumeKey(def.id), null);
+        if (saved && saved.ts && (Date.now() - saved.ts) < RESUME_WINDOW && saved.state != null) {
             renderResumePrompt(def, saved);
         } else if (def.difficulties) {
             renderDifficulty(def, null);
@@ -1522,13 +1597,15 @@
         var wrap = el("div", { class: "chooser fade-in" }, [
             el("div", { class: "chooser-ico", html: def.icon || "&#127918;" }),
             el("h2", { text: "Welcome back!" }),
-            el("p", { class: "small-note", text: "You have a " + def.name + " game in progress." }),
+            el("p", { class: "small-note", html: "You have a <b>" + esc(def.name) + "</b> game in progress" +
+                (saved.difficulty && def.difficulties ? " on <b>" + esc(saved.difficulty) + "</b>" : "") +
+                ".<br>Last played " + fmtWhen(saved.ts) + "." }),
             el("div", { class: "btn-row", style: "flex-direction:column;gap:10px;width:100%;max-width:300px" }, [
                 el("button", { class: "btn primary", style: "width:100%", html: "&#9654;&#65039; Continue game", onclick: function () {
                     Sound.click(); launchGame(def, saved.difficulty || "medium", saved.state);
                 } }),
                 el("button", { class: "btn", style: "width:100%", text: "Start new game", onclick: function () {
-                    Sound.click(); try { LS.removeItem("ba_resume_" + def.id); } catch (e) {} liveState = null;
+                    Sound.click(); dropResume(def.id);
                     view.innerHTML = ""; if (def.difficulties) renderDifficulty(def, null); else launchGame(def, load("diff_" + def.id, "medium"), null);
                 } })
             ])
@@ -1867,10 +1944,11 @@
 
     /* ---------- router ---------- */
     function teardown() {
-        // If leaving a resumable game mid-play, remember the state so we can offer Continue.
-        if (current && current.def && current.def.resumable && liveState != null) {
-            save("resume_" + current.def.id, { state: liveState, difficulty: current.difficulty || "medium", ts: Date.now() });
+        // Leaving mid-play: make sure the very latest state is on disk.
+        if (current && current.def && liveState != null) {
+            writeResume(current.def, liveState, current.difficulty);
         }
+        clearTimeout(saveTimer); saveTimer = null;
         if (current && current.def) {
             var pid = current.def.id;
             var played = playingId === pid ? (Date.now() - playStartedAt) : 0;
@@ -1879,7 +1957,7 @@
             if ((statFor(pid).ms > 10000 || played > 10000)) completeDaily(pid);
             checkAchievements();
         }
-        liveState = null;
+        liveState = null; liveDef = null;
         if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
         current = null; clearOverlays(); removeHelpFab();
     }

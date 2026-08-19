@@ -1,5 +1,5 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "files": [
     "css/style.css",
     "index.html",
@@ -30,6 +30,7 @@
     "js/games/tetris.js",
     "js/games/tictactoe.js",
     "js/games/towerstack.js",
+    "js/games/watersort.js",
     "js/games/whack.js",
     "js/games/wordle-words.js",
     "js/games/wordle.js",

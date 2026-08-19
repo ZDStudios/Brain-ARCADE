@@ -2,5 +2,5 @@
   "versionCode": 20,
   "versionName": "1.12.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "New: Find this tablet. The dashboard rings the device at full volume with a buzz and a beep, and a big STOP button appears on it. Also fixes vibration, which never worked because the VIBRATE permission was missing."
+  "notes": "Wordle now has hints, a new Water Sort puzzle joins the arcade, and games save as you play \u2014 if the app gets closed mid-game, 16 games now offer to carry on where you left off, for up to a week."
 }

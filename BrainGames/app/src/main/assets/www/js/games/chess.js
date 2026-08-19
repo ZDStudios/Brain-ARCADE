@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "chess", name: "Chess", icon: "&#9822;",
         gradient: "linear-gradient(135deg,#1F2937,#4B5563)",
-        best: "high", bestLabel: "Wins", difficulties: true,
+        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
         help: {"emoji":"&#9823;","goal":"Trap the computer's king (checkmate).","steps":["You play the white pieces at the bottom.","Tap a piece to see its name and where it can go (green dots).","Tap a green dot to move. A red ring means you can capture.","Trap the enemy king so it cannot escape to win!"]},
         mount: function (host, api) {
             var GLYPH = { P:"♙", N:"♘", B:"♗", R:"♖", Q:"♕", K:"♔",
@@ -51,7 +51,12 @@
             function sqStyle(dark) {
                 return "width:" + cell + "px;height:" + cell + "px;display:grid;place-items:center;font-size:" + Math.floor(cell * 0.74) + "px;line-height:1;cursor:pointer;background:" + (dark ? "#6B7280" : "#E5E7EB") + ";position:relative";
             }
+            function saveNow() {
+                if (over || !board) return;
+                api.saveState({ board: board.slice(), turn: turn, castling: castling, epTarget: epTarget });
+            }
             function paint() {
+                saveNow();
                 for (var i = 0; i < 64; i++) {
                     var p = board[i], d = cells[i];
                     d.textContent = p ? GLYPH[p] : "";
@@ -220,6 +225,7 @@
                 over = true;
                 if (inCheck(board, mover)) {
                     if (!mover) { // black mated -> white wins
+                        api.clearState();
                         wins++; api.save("wins", wins); sScore.val.textContent = wins; api.setBest(wins); sBest.val.textContent = api.getBest(); api.sound.win(); api.haptic(30);
                         api.overlay({ emoji: "&#127942;", title: "Checkmate — you win!", sub: "Brilliant play.", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] });
                     } else { api.sound.lose();
@@ -230,14 +236,25 @@
                 }
                 return true;
             }
+            function restore(rs) {
+                board = rs.board.slice(); turn = rs.turn || "w"; sel = null; over = false; aiThinking = false;
+                castling = rs.castling == null ? "KQkq" : rs.castling;
+                epTarget = typeof rs.epTarget === "number" ? rs.epTarget : -1;
+                sTurn.val.textContent = turn === "w" ? "White" : "Black";
+                msg.textContent = "Back to your game. Tap a piece, then tap where to move.";
+                legalCache = legal(board, turn === "w", castling, epTarget);
+                build(); paint();
+            }
             function reset() {
+                api.clearState();
                 board = ("rnbqkbnr" + "pppppppp" + "........" + "........" + "........" + "........" + "PPPPPPPP" + "RNBQKBNR").split("").map(function (c) { return c === "." ? "" : c; });
                 turn = "w"; sel = null; over = false; aiThinking = false; castling = "KQkq"; epTarget = -1;
                 sTurn.val.textContent = "White"; msg.textContent = "Tap a piece, then tap where to move. You are White.";
                 legalCache = legal(board, true, castling, epTarget);
                 build(); paint();
             }
-            reset();
+            if (api.resumeState && api.resumeState.board && api.resumeState.board.length === 64) restore(api.resumeState);
+            else reset();
             return function () {};
         }
     });

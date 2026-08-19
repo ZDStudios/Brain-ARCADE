@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "sudoku", name: "Sudoku", icon: "&#128290;",
         gradient: "linear-gradient(135deg,#0D9488,#0EA5E9)",
-        best: "low", bestLabel: "Best", bestSuffix: "s", difficulties: true,
+        best: "low", bestLabel: "Best", bestSuffix: "s", difficulties: true, resumable: true,
         help: {"emoji":"&#128290;","goal":"Fill the grid so every row, column and box has 1-9.","steps":["Tap an empty square, then tap a number.","No number can repeat in a row, column or 3x3 box.","Red numbers show a clash, fix them.","Fill the whole grid correctly to win!"]},
         mount: function (host, api) {
             var solution, puzzle, given, sel = -1, time = 0, timer, doneGame;
@@ -73,10 +73,14 @@
                     padEl.appendChild(api.el("button", { class: "btn", style: "padding:12px 0", text: n + "", onclick: function () { setCell(n); } }));
                 })(n); }
             }
+            function saveNow() {
+                if (doneGame || !puzzle) return;
+                api.saveState({ solution: solution, puzzle: puzzle, given: given, time: time });
+            }
             function select(i) { if (doneGame) return; sel = i; api.sound.tick(); paint(); }
             function setCell(n) {
                 if (doneGame || sel < 0 || given[sel]) return;
-                puzzle[sel] = n; api.sound.click(); api.haptic(6); paint();
+                puzzle[sel] = n; api.sound.click(); api.haptic(6); paint(); saveNow();
                 if (n && puzzle.every(function (v, k) { return v === solution[k]; })) winGame();
             }
             function conflict(i) {
@@ -101,20 +105,29 @@
                 }
             }
             function winGame() {
-                doneGame = true; clearInterval(timer); var rec = api.setBest(time); api.sound.win(); api.haptic(30);
+                doneGame = true; clearInterval(timer); api.clearState(); var rec = api.setBest(time); api.sound.win(); api.haptic(30);
                 api.overlay({ emoji: "&#127881;", title: "Solved!", sub: "Time <b>" + time + "s</b>" + (rec ? "<br>&#127942; New best!" : ""),
-                    buttons: [ { label: "Home", onClick: api.exit }, { label: "New puzzle", primary: true, onClick: reset } ] });
+                    buttons: [ { label: "Home", onClick: api.exit }, { label: "New puzzle", primary: true, onClick: function () { reset(); } } ] });
             }
-            function reset() {
-                clearInterval(timer); doneGame = false; time = 0; sTime.val.textContent = "0s"; sel = -1;
-                var holes = { easy: 36, medium: 45, hard: 54 }[api.difficulty] || 45;
-                solution = makeSolution(); puzzle = dig(solution, holes); given = puzzle.map(function (v) { return v !== 0; });
-                build();
-                timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; }, 1000);
+            function reset(rs) {
+                clearInterval(timer); doneGame = false; sel = -1;
+                if (rs && rs.puzzle && rs.solution) {
+                    // Straight back into the half-finished grid, clock included.
+                    solution = rs.solution.slice(); puzzle = rs.puzzle.slice();
+                    given = rs.given ? rs.given.slice() : puzzle.map(function () { return false; });
+                    time = rs.time || 0;
+                } else {
+                    time = 0;
+                    var holes = { easy: 36, medium: 45, hard: 54 }[api.difficulty] || 45;
+                    solution = makeSolution(); puzzle = dig(solution, holes); given = puzzle.map(function (v) { return v !== 0; });
+                }
+                sTime.val.textContent = time + "s";
+                build(); saveNow();
+                timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; saveNow(); }, 1000);
             }
             function key(e) { if (/^[1-9]$/.test(e.key)) setCell(+e.key); else if (e.key === "Backspace" || e.key === "0") setCell(0); }
             window.addEventListener("keydown", key);
-            reset();
+            reset(api.resumeState);
             return function () { clearInterval(timer); window.removeEventListener("keydown", key); };
         }
     });

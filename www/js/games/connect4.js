@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "c4", name: "Connect Four", icon: "&#128309;",
         gradient: "linear-gradient(135deg,#DC2626,#F59E0B)",
-        best: "high", bestLabel: "Wins", difficulties: true,
+        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
         help: {"emoji":"&#128309;","goal":"Connect four of your discs in a line.","steps":["You are the red discs.","Tap a column to drop your disc to the bottom.","Line up four across, up, or diagonally.","Stop the computer's yellow discs from doing it first!"]},
         mount: function (host, api) {
             var COLS = 7, ROWS = 6, board, lock, wins = api.load("wins", 0);
@@ -32,8 +32,15 @@
                 var col = v === 1 ? "radial-gradient(circle at 35% 30%,#FCA5A5,#DC2626)" : v === 2 ? "radial-gradient(circle at 35% 30%,#FDE68A,#F59E0B)" : "var(--bg)";
                 return "width:" + cellPx + "px;height:" + cellPx + "px;border-radius:50%;background:" + col + ";cursor:pointer";
             }
+            function saveNow() {
+                if (!board) return;
+                // Nothing to come back to on an empty board.
+                if (board.every(function (v) { return !v; })) { api.clearState(); return; }
+                api.saveState({ board: board.slice() });
+            }
             function paint(hl) {
                 for (var i = 0; i < ROWS * COLS; i++) { cellEls[i].style.cssText = discStyle(board[i]); if (hl && hl.indexOf(i) > -1) cellEls[i].style.boxShadow = "0 0 0 3px #34D399, 0 0 18px #34D399"; }
+                if (!hl) saveNow();          // a highlight means the game just ended
             }
             function dropRow(bb, c) { for (var r = ROWS - 1; r >= 0; r--) if (!bb[r * COLS + c]) return r; return -1; }
             function drop(c) {
@@ -86,14 +93,21 @@
             }
             function end(p, line) {
                 lock = true; paint(line);
+                api.clearState();
                 if (p === 1) { wins++; api.save("wins", wins); sScore.val.textContent = wins; api.setBest(wins); sBest.val.textContent = api.getBest(); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127881;", title: "You win!", sub: "Four in a row!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else if (p === 2) { api.sound.lose();
                     api.overlay({ emoji: "&#129302;", title: "AI wins", sub: "Watch those diagonals!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else { api.sound.pop(); api.overlay({ emoji: "&#129309;", title: "Draw", sub: "Board's full!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
             }
-            function reset() { board = new Array(ROWS * COLS).fill(0); lock = false; build(); paint(); }
-            reset();
+            function reset(rs) {
+                if (rs && rs.board && rs.board.length === ROWS * COLS) {
+                    board = rs.board.slice(); lock = false; build(); paint();
+                    return;
+                }
+                board = new Array(ROWS * COLS).fill(0); lock = false; build(); paint(); api.clearState();
+            }
+            reset(api.resumeState);
             return function () {};
         }
     });

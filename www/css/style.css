@@ -768,3 +768,30 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 }
 .find-stop { width:100%; font-size:24px; padding:20px 0; letter-spacing:1px; }
 :root.tv .find-stop { font-size:30px; padding:26px 0; }
+
+/* --- carry on: unfinished games --- */
+.resume-strip { display:flex; flex-direction:column; gap:9px; margin-bottom:6px; }
+.resume-card { display:flex; align-items:center; gap:12px; width:100%; padding:11px 13px; cursor:pointer;
+    border-radius:16px; background:var(--card); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color:var(--text); text-align:left; }
+.resume-card:active { transform:scale(.98); }
+.resume-card .rs-ico { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; font-size:21px; flex:0 0 auto; }
+.resume-card .rs-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.resume-card .rs-name { font-weight:800; font-size:15px; }
+.resume-card .rs-when { font-size:12px; color:var(--muted); margin-top:1px; }
+.resume-card .rs-go { font-size:17px; opacity:.85; }
+:root.tv .resume-card .rs-name { font-size:19px; }
+
+/* --- Water Sort --- */
+.ws-tubes { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:flex-end; padding:6px 0; }
+.ws-tube { display:flex; flex-direction:column; justify-content:flex-end; gap:2px; padding:4px;
+    border:3px solid rgba(255,255,255,.28); border-top:none;
+    border-radius:6px 6px 20px 20px; background:rgba(255,255,255,.05); cursor:pointer;
+    transition:transform .12s, border-color .15s, box-shadow .15s; }
+.ws-tube .ws-unit { flex:1; border-radius:4px; background:transparent; }
+.ws-tube .ws-unit.empty { background:transparent; }
+.ws-tube.sel { transform:translateY(-14px); border-color:var(--accent-2);
+    box-shadow:0 0 16px color-mix(in srgb, var(--accent-2) 45%, transparent); }
+.ws-tube.done { border-color:var(--good); }
+.ws-tube.nav-here { outline:3px solid var(--accent-2); outline-offset:3px; }
+.ws-tube:active { transform:scale(.97); }

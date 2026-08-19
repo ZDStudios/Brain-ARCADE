@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "solitaire", name: "Solitaire", icon: "&#127183;",
         gradient: "linear-gradient(135deg,#047857,#065F46)",
-        best: "low", bestLabel: "Best", bestSuffix: "s",
+        best: "low", bestLabel: "Best", bestSuffix: "s", resumable: true,
         help: {"emoji":"&#127183;","goal":"Move all cards to the 4 top piles, Ace up to King.","steps":["Tap the deck (top-left) to flip cards.","Tap a card, then tap where you want it to go.","On the board, stack down by one and switch colours (red on black).","Send Aces to the top piles, then build up A,2,3...King."]},
         mount: function (host, api) {
             var SUITS = ["♠", "♥", "♦", "♣"];
@@ -30,8 +30,21 @@
             }
             function slotStyle() { return "width:" + cw + "px;height:" + ch + "px;border-radius:7px;border:1.5px dashed rgba(255,255,255,0.25);flex:0 0 auto;position:relative;background:rgba(255,255,255,0.04)"; }
 
-            function reset() {
+            function saveNow() {
+                if (won || !tableau) return;
+                api.saveState({ stock: stock, waste: waste, found: found, tableau: tableau, moves: moves, time: time });
+            }
+            function reset(rs) {
                 clearInterval(timer);
+                if (rs && rs.tableau && rs.tableau.length === 7) {
+                    stock = rs.stock || []; waste = rs.waste || [];
+                    found = rs.found || [[],[],[],[]]; tableau = rs.tableau;
+                    sel = null; moves = rs.moves || 0; time = rs.time || 0; won = false;
+                    sMoves.val.textContent = String(moves); sTime.val.textContent = time + "s";
+                    render();
+                    timer = setInterval(function () { if (!won) { time++; sTime.val.textContent = time + "s"; saveNow(); } }, 1000);
+                    return;
+                }
                 var deck = [];
                 for (var s = 0; s < 4; s++) for (var r = 0; r < 13; r++) deck.push({ s: SUITS[s], r: r });
                 for (var i = deck.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = deck[i]; deck[i] = deck[j]; deck[j] = t; }
@@ -41,11 +54,12 @@
                 sel = null; moves = 0; time = 0; won = false;
                 sMoves.val.textContent = "0"; sTime.val.textContent = "0s";
                 render();
-                timer = setInterval(function () { if (!won) { time++; sTime.val.textContent = time + "s"; } }, 1000);
+                timer = setInterval(function () { if (!won) { time++; sTime.val.textContent = time + "s"; saveNow(); } }, 1000);
             }
             function label(c) { return RANKS[c.r] + c.s; }
 
             function render() {
+                saveNow();
                 topRow.innerHTML = ""; tabRow.innerHTML = "";
                 // stock
                 var stockEl = api.el("div", { style: slotStyle() });
@@ -124,12 +138,12 @@
             function bump() { moves++; sMoves.val.textContent = moves; }
             function checkWin() {
                 if (found.reduce(function (a, f) { return a + f.length; }, 0) === 52) {
-                    won = true; clearInterval(timer); var rec = api.setBest(time); api.sound.win(); api.haptic(40);
+                    won = true; clearInterval(timer); api.clearState(); var rec = api.setBest(time); api.sound.win(); api.haptic(40);
                     api.overlay({ emoji: "&#127881;", title: "You won!", sub: "Cleared in <b>" + time + "s</b>, " + moves + " moves" + (rec ? "<br>&#127942; New best!" : ""),
                         buttons: [ { label: "Home", onClick: api.exit }, { label: "New game", primary: true, onClick: reset } ] });
                 }
             }
-            reset();
+            reset(api.resumeState);
             return function () { clearInterval(timer); };
         }
     });

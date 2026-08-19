@@ -1,6 +1,6 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **29 brain games** — Chess, Tetris,
+An offline Android **and Android TV** arcade with **30 brain games** — Chess, Tetris,
 Solitaire, Rush Hour, Wordle, 2048, Reversi, a 3D spatial-memory game and a
 head-to-head multiplayer race — plus WiFi auto-updates, a built-in kiosk lock, and
 a remote control dashboard.
@@ -66,6 +66,37 @@ UI to learn. Devices are listed by their own name, or by what they are running
 
 The server owns the answer key, the progress and the energy — a client only ever says
 "I picked tile 2", and tasks arrive one at a time.
+
+## 📝 Wordle hints
+Stuck on a word? **💡 Hint** fills one letter of the answer into the row you are
+typing, at its real position, and locks that square so you cannot type over it or
+delete it. Two per word — enough to unstick a child, not enough to solve it for them.
+The win panel says how many you used.
+
+## 🥤 Water Sort
+Pour the colours until every tube holds just one. You can only pour onto the same
+colour or into an empty tube, so every move closes doors as well as opening them —
+it is pure forward planning, with no numbers anywhere. Undo and Restart are built in,
+levels get an extra colour every three, and **every deal is checked to be solvable
+before you see it** (a bounded depth-first search), so a child can never be handed a
+dead board.
+
+## 💾 Session saving
+Games save as you play, not when you leave. `api.saveState()` writes straight to
+storage (throttled, and flushed on `visibilitychange`/`pagehide`), which is the whole
+point: the case that actually loses work is the app being *killed* — a reboot, a crash,
+an OTA reload — and that never runs the normal teardown path.
+
+- The window is **a week**, not the old 30 seconds.
+- **16 games** resume mid-play (was 3): Sudoku, Minesweeper, Chess, Solitaire, Word
+  Search, Rush Hour, Tetris, Block Blast, Water Sort, 2048, Wordle, 15 Puzzle, Memory
+  Match, Reversi, Connect Four and Tic-Tac-Toe.
+- Opening a game with a saved board shows a **Do you want to continue?** menu —
+  whether or not that game has a difficulty chooser — and says when you last played.
+- The home screen gets a **⏸ Carry on** strip listing unfinished games, so you do not
+  have to remember which one you were in.
+- Finishing or losing a game clears its save, so nothing offers to "continue" a game
+  that is already over.
 
 ## 🌐 Server URL is built in
 Fresh installs already point at <https://brain-arcade-control.onrender.com> — nobody

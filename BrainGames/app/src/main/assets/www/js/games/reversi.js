@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "reversi", name: "Reversi", icon: "&#9899;",
         gradient: "linear-gradient(135deg,#065F46,#111827)",
-        best: "high", bestLabel: "Wins", difficulties: true,
+        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
         help: {"emoji":"&#9899;","goal":"Have the most discs when the board fills up.","steps":["You are the black discs.","Tap a glowing square to place a disc.","Trap white discs between two of yours to flip them black.","Whoever has more discs at the end wins."]},
         mount: function (host, api) {
             var N = 8, board, turn, over, wins = api.load("wins", 0), busy;
@@ -46,6 +46,10 @@
             function place(b, i, p) { var f = flips(b, i, p); b[i] = p; f.forEach(function (j) { b[j] = p; }); return f.length; }
             function counts(b) { var y = 0, c = 0; b.forEach(function (v) { if (v === 1) y++; else if (v === -1) c++; }); return { y: y, c: c }; }
 
+            function saveNow() {
+                if (!board || over) return;
+                api.saveState({ board: board.slice(), turn: turn });
+            }
             function paint(hints) {
                 var cnt = counts(board); sYou.val.textContent = cnt.y; sCpu.val.textContent = cnt.c;
                 for (var i = 0; i < N * N; i++) {
@@ -57,6 +61,7 @@
                         d.appendChild(api.el("div", { style: "width:26%;height:26%;border-radius:50%;background:rgba(34,211,238,0.7)" }));
                     }
                 }
+                saveNow();
             }
             function play(i) {
                 if (over || busy || turn !== 1) return;
@@ -99,6 +104,7 @@
             function endCheck() {
                 if (legal(board, 1).length || legal(board, -1).length) return false;
                 over = true; var c = counts(board);
+                api.clearState();
                 if (c.y > c.c) { wins++; api.save("wins", wins); sWins.val.textContent = wins; api.setBest(wins); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127942;", title: "You win!", sub: c.y + " – " + c.c, buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else if (c.c > c.y) { api.sound.lose();
@@ -112,7 +118,13 @@
                 msg.textContent = "You are black. Tap a highlighted square.";
                 build(); paint(legal(board, 1));
             }
-            reset();
+            function restore(rs) {
+                board = rs.board.slice(); turn = rs.turn || 1; over = false; busy = false;
+                msg.textContent = "You are black. Tap a highlighted square.";
+                build(); paint(legal(board, 1));
+            }
+            if (api.resumeState && api.resumeState.board && api.resumeState.board.length === N * N) restore(api.resumeState);
+            else reset();
             return function () {};
         }
     });

@@ -9,7 +9,7 @@
         id: "wordsearch", name: "Word Search", icon: "&#128269;",
         gradient: "linear-gradient(135deg,#0EA5E9,#6366F1)",
         best: "low", bestLabel: "Fastest", bestSuffix: "s",
-        difficulties: true,
+        difficulties: true, resumable: true,
         help: {
             emoji: "&#128269;", goal: "Find every hidden word in the grid.",
             steps: [
@@ -68,6 +68,11 @@
                 return null;
             }
 
+            function saveNow() {
+                if (done || !grid || !grid.length) return;
+                api.saveState({ grid: grid, targets: targets, found: found,
+                                elapsed: t0 ? Math.round((Date.now() - t0) / 1000) : 0 });
+            }
             function reset() {
                 done = false;
                 grid = []; for (var r = 0; r < N; r++) { grid.push([]); for (var c = 0; c < N; c++) grid[r].push(""); }
@@ -152,6 +157,7 @@
             }
             function win() {
                 done = true; clearInterval(timer);
+                api.clearState();
                 var secs = Math.round((Date.now() - t0) / 1000);
                 var rec = api.setBest(secs);
                 api.sound.win();
@@ -217,7 +223,22 @@
                 else { var t = tapStart; tapStart = null; commit(lineBetween(t, i)); }
             }
 
-            reset();
+            var wrs = api.resumeState;
+            if (wrs && wrs.grid && wrs.grid.length && wrs.targets) {
+                done = false;
+                grid = wrs.grid; targets = wrs.targets; found = wrs.found || {};
+                draw(); drawList(); paintFound();
+                sFound.val.textContent = String(Object.keys(found).length);
+                sTotal.val.textContent = String(targets.length);
+                // Rebase the clock so the puzzle carries on from where it stopped.
+                t0 = Date.now() - (wrs.elapsed || 0) * 1000;
+                sTime.val.textContent = (wrs.elapsed || 0) + "s";
+                clearInterval(timer);
+                timer = setInterval(function () {
+                    sTime.val.textContent = Math.round((Date.now() - t0) / 1000) + "s";
+                    saveNow();
+                }, 1000);
+            } else { reset(); }
             return function () { clearInterval(timer); };
         }
     });

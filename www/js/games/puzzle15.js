@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "puzzle15", name: "15 Puzzle", icon: "&#128302;",
         gradient: "linear-gradient(135deg,#0891B2,#4F46E5)",
-        best: "low", bestLabel: "Best", bestSuffix: " moves",
+        best: "low", bestLabel: "Best", bestSuffix: " moves", resumable: true,
         help: {"emoji":"&#128256;","goal":"Slide the tiles into order from 1 to 15.","steps":["There is one empty space on the board.","Tap a tile next to the space (or swipe) to slide it.","Keep sliding to put the numbers in order.","Finish 1 to 15 in as few moves as you can!"]},
         mount: function (host, api) {
             var N = 4, tiles, blank, moves, solvedGame;
@@ -38,6 +38,7 @@
                     el.style.left = pos(c) + "px"; el.style.top = pos(r) + "px";
                 }
                 sMoves.val.textContent = moves;
+                if (!solvedGame && tiles) api.saveState({ tiles: tiles.slice(), moves: moves });
             }
             function clickTile(v) {
                 if (solvedGame) return;
@@ -62,9 +63,9 @@
                 return ((N % 2 === 1) ? (inv % 2 === 0) : ((inv + (N - blankRow)) % 2 === 1));
             }
             function win() {
-                solvedGame = true; var rec = api.setBest(moves); api.sound.win(); api.haptic(30);
+                solvedGame = true; api.clearState(); var rec = api.setBest(moves); api.sound.win(); api.haptic(30);
                 api.overlay({ emoji: "&#127881;", title: "Solved!", sub: "In <b>" + moves + "</b> moves" + (rec ? "<br>&#127942; New best!" : ""),
-                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Shuffle", primary: true, onClick: reset } ] });
+                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Shuffle", primary: true, onClick: function () { reset(); } } ] });
             }
             function reset() {
                 solvedGame = false; moves = 0;
@@ -77,7 +78,10 @@
                 if (Math.abs(dx) > Math.abs(dy)) slide(dx > 0 ? "right" : "left"); else slide(dy > 0 ? "down" : "up"); });
             function key(e) { var m = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right" }; if (e.key in m) { e.preventDefault(); slide(m[e.key]); } }
             window.addEventListener("keydown", key);
-            build(); reset();
+            build();
+            if (api.resumeState && api.resumeState.tiles && api.resumeState.tiles.length === 16) {
+                solvedGame = false; tiles = api.resumeState.tiles.slice(); moves = api.resumeState.moves || 0; render();
+            } else { reset(); }
             return function () { window.removeEventListener("keydown", key); };
         }
     });

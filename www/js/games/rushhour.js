@@ -9,7 +9,7 @@
     window.BrainGames.register({
         id: "rushhour", name: "Rush Hour", icon: "&#128663;",
         gradient: "linear-gradient(135deg,#B91C1C,#F59E0B)",
-        best: "low", bestLabel: "Best", bestSuffix: " moves",
+        best: "low", bestLabel: "Best", bestSuffix: " moves", resumable: true,
         help: { emoji: "&#128663;", goal: "Drive the red car out through the exit on the right.", steps: [
             "Cars only slide forwards and backwards, never sideways.",
             "Tap a car to pick it — it lifts up and shows blue arrows.",
@@ -69,7 +69,13 @@
                 return d;
             }
 
+            function saveNow() {
+                if (solved || !cars) return;
+                api.saveState({ cars: cars.map(function (c) { return { id: c.id, x: c.x, y: c.y, len: c.len, dir: c.dir }; }),
+                                level: level, moves: moves });
+            }
             function render() {
+                saveNow();
                 boardEl.querySelectorAll(".rh-car,.rh-arrow").forEach(function (e) { e.remove(); });
                 cars.forEach(function (c) { boardEl.appendChild(buildCar(c)); });
                 if (sel && !solved) addArrows(cars.filter(function (c) { return c.id === sel; })[0]);
@@ -99,7 +105,7 @@
                 if (car.id === "X" && car.x + car.len - 1 === N - 1) win();
             }
             function win() {
-                solved = true; sel = null; render(); var rec = api.setBest(moves); api.sound.win(); api.haptic(40);
+                solved = true; sel = null; render(); api.clearState(); var rec = api.setBest(moves); api.sound.win(); api.haptic(40);
                 api.overlay({ emoji: "&#128663;", title: "You freed it!", sub: "Level " + (level + 1) + " in <b>" + moves + "</b> moves" + (rec ? "<br>&#127942; New best!" : ""),
                     buttons: [ { label: "Home", onClick: api.exit }, { label: "Next level", primary: true, onClick: function () { level = (level + 1) % LEVELS.length; api.save("level", level); load(level); } } ] });
             }
@@ -109,7 +115,15 @@
                 render();
             }
             boardEl.addEventListener("click", function () { if (sel) { sel = null; render(); } });
-            load(level);
+            var rrs = api.resumeState;
+            if (rrs && rrs.cars && rrs.cars.length) {
+                // Back to the exact traffic jam, mid-level.
+                level = typeof rrs.level === "number" ? rrs.level : level;
+                cars = rrs.cars.map(function (c) { return { id: c.id, x: c.x, y: c.y, len: c.len, dir: c.dir }; });
+                sel = null; moves = rrs.moves || 0; solved = false;
+                sMoves.val.textContent = String(moves); sLevel.val.textContent = (level + 1);
+                render();
+            } else { load(level); }
             return function () {};
         }
     });

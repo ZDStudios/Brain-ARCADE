@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "blockblast", name: "Block Blast", icon: "&#129000;",
         gradient: "linear-gradient(135deg,#F97316,#EF4444)",
-        best: "high",
+        best: "high", resumable: true,
         help: {"emoji":"&#129000;","goal":"Fill full rows or columns to blast them away.","steps":["Tap one of the 3 pieces at the bottom to pick it.","Tap the board to drop it on empty squares.","Fill a whole row or column to clear it and score.","Keep placing until no piece can fit anywhere."]},
         mount: function (host, api) {
             var N = 8;
@@ -118,19 +118,39 @@
                 if (!ok) gameOver();
             }
             function gameOver() {
+                api.clearState();
                 var record = api.setBest(score);
                 api.sound.lose();
                 api.overlay({ emoji: "&#129000;", title: "No moves left",
                     sub: "Score <b>" + score + "</b>" + (record ? "<br>&#127942; New best!" : ""),
-                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: reset } ] });
+                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: function () { reset(); } } ] });
             }
-            function update() { sScore.val.textContent = score; sBest.val.textContent = api.getBest() || 0; }
-            function reset() {
+            function update() {
+                sScore.val.textContent = score; sBest.val.textContent = api.getBest() || 0;
+                saveNow();
+            }
+            function saveNow() {
+                if (!grid.length || !tray) return;
+                api.saveState({
+                    grid: grid.map(function (r) { return r.slice(); }),
+                    tray: tray.map(function (p) { return p ? { m: p.m, color: p.color } : null; }),
+                    score: score
+                });
+            }
+            function reset(rs) {
                 for (var r = 0; r < N; r++) grid[r].fill(0);
+                if (rs && rs.grid && rs.grid.length === N && rs.tray) {
+                    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) grid[y][x] = rs.grid[y][x] || 0;
+                    score = rs.score || 0;
+                    buildBoard(); paint();
+                    tray = rs.tray.map(function (p) { return p ? { m: p.m, color: p.color } : null; });
+                    selected = -1; renderTray(); update();
+                    return;
+                }
                 score = 0; buildBoard(); paint(); newTray(); update();
             }
 
-            buildBoard(); reset();
+            buildBoard(); reset(api.resumeState);
             return function () {};
         }
     });

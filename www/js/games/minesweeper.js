@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "mines", name: "Minesweeper", icon: "&#128163;",
         gradient: "linear-gradient(135deg,#475569,#0F172A)",
-        best: "low", bestLabel: "Best", bestSuffix: "s", difficulties: true,
+        best: "low", bestLabel: "Best", bestSuffix: "s", difficulties: true, resumable: true,
         help: {"emoji":"&#128163;","goal":"Reveal every safe square without hitting a mine.","steps":["Tap a square to reveal it.","A number shows how many mines touch that square.","Turn on Flag mode (or long-press) to mark a mine.","Reveal all the safe squares to win!"]},
         mount: function (host, api) {
             var cfg = { easy: { N: 8, MINES: 8 }, medium: { N: 9, MINES: 10 }, hard: { N: 10, MINES: 18 } }[api.difficulty] || { N: 9, MINES: 10 };
@@ -55,7 +55,7 @@
                     var n = 0; neighbors(r2, c2, function (rr, cc) { if (grid[idx(rr, cc)] === -1) n++; });
                     grid[idx(r2, c2)] = n;
                 }
-                started = true; timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; }, 1000);
+                started = true; timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; saveNow(); }, 1000);
             }
             function tap(r, c) {
                 if (dead || wonGame) return;
@@ -92,19 +92,33 @@
             function checkWin() {
                 var count = 0; for (var i = 0; i < N * N; i++) if (revealed[i]) count++;
                 if (count === N * N - MINES) {
-                    wonGame = true; clearInterval(timer); var rec = api.setBest(time); api.sound.win(); api.haptic(30);
+                    wonGame = true; clearInterval(timer); api.clearState(); var rec = api.setBest(time); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127942;", title: "Cleared!", sub: "Time <b>" + time + "s</b>" + (rec ? "<br>New best!" : ""),
-                        buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: reset } ] });
+                        buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: function () { reset(); } } ] });
                 }
             }
-            function reset() {
+            function saveNow() {
+                if (dead || wonGame || !grid) return;
+                api.saveState({ grid: grid, revealed: revealed, flags: flags, started: started, time: time, left: left });
+            }
+            function reset(rs) {
                 clearInterval(timer);
+                if (rs && rs.grid && rs.grid.length === N * N) {
+                    grid = rs.grid.slice(); revealed = rs.revealed.slice(); flags = rs.flags.slice();
+                    started = !!rs.started; time = rs.time || 0; left = typeof rs.left === "number" ? rs.left : MINES;
+                    dead = false; wonGame = false;
+                    sTime.val.textContent = time + "s"; sMines.val.textContent = left;
+                    build();
+                    // A board that was already running keeps its clock running.
+                    if (started) timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; saveNow(); }, 1000);
+                    return;
+                }
                 grid = new Array(N * N).fill(0); revealed = new Array(N * N).fill(false); flags = new Array(N * N).fill(false);
                 dead = false; wonGame = false; started = false; time = 0; left = MINES;
                 sTime.val.textContent = "0s"; sMines.val.textContent = MINES;
                 build();
             }
-            reset();
+            reset(api.resumeState);
             return function () { clearInterval(timer); };
         }
     });

@@ -3,7 +3,7 @@
     window.BrainGames.register({
         id: "tetris", name: "Tetris", icon: "&#129513;",
         gradient: "linear-gradient(135deg,#6D28D9,#DB2777)",
-        best: "high", bestLabel: "Best", difficulties: true,
+        best: "high", bestLabel: "Best", difficulties: true, resumable: true,
         help: {"emoji":"&#129513;","goal":"Fill whole lines with blocks to clear them and score.","steps":["Blocks fall from the top. Move them with the &#8592; and &#8594; buttons.","Tap &#8635; to spin the block so it fits.","Fill a whole row with no gaps to clear it and score.","Tap &#9196; to drop fast. Don't let blocks stack to the top!"]},
         mount: function (host, api) {
             var COLS = 10, ROWS = 20;
@@ -131,21 +131,42 @@
             }
             function update() {
                 sScore.val.textContent = score; sLines.val.textContent = lines; sLevel.val.textContent = level;
+                saveNow();
+            }
+            function saveNow() {
+                if (over || !grid.length) return;
+                api.saveState({
+                    grid: grid.map(function (r) { return r.slice(); }),
+                    piece: piece ? { t: piece.t, m: piece.m.map(function (r) { return r.slice(); }), x: piece.x, y: piece.y } : null,
+                    score: score, lines: lines, level: level
+                });
             }
             function gameOver() {
                 over = true;
+                api.clearState();
                 var record = api.setBest(score);
                 api.sound.lose();
                 api.overlay({
                     emoji: "&#128128;", title: "Game Over",
                     sub: "Score <b>" + score + "</b> &middot; " + lines + " lines" + (record ? "<br>&#127942; New best!" : ""),
-                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: reset } ]
+                    buttons: [ { label: "Home", onClick: api.exit }, { label: "Play again", primary: true, onClick: function () { reset(); } } ]
                 });
             }
             function togglePause() { if (over) return; paused = !paused; api.toast(paused ? "Paused" : "Resumed"); }
-            function reset() {
+            function reset(rs) {
                 for (var r = 0; r < ROWS; r++) grid[r].fill(0);
-                score = 0; lines = 0; level = 1; over = false; paused = false; dropMs = baseDrop; acc = 0; last = 0;
+                over = false; paused = false; acc = 0; last = 0;
+                if (rs && rs.grid && rs.grid.length === ROWS) {
+                    for (var y = 0; y < ROWS; y++) for (var x = 0; x < COLS; x++) grid[y][x] = rs.grid[y][x] || 0;
+                    score = rs.score || 0; lines = rs.lines || 0; level = rs.level || 1;
+                    dropMs = Math.max(120, baseDrop - (level - 1) * 55);   // same curve the game uses
+                    update();
+                    if (rs.piece && rs.piece.m) piece = { t: rs.piece.t, m: rs.piece.m.map(function (r2) { return r2.slice(); }), x: rs.piece.x, y: rs.piece.y };
+                    else spawn();
+                    draw();
+                    return;
+                }
+                score = 0; lines = 0; level = 1; dropMs = baseDrop;
                 update(); spawn(); draw();
             }
 
@@ -172,7 +193,7 @@
             }
             window.addEventListener("keydown", key);
 
-            reset();
+            reset(api.resumeState);
             raf = requestAnimationFrame(tick);
 
             return function () {
