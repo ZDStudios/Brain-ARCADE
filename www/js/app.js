@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.13.0";
+    var VERSION = "1.13.1";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }

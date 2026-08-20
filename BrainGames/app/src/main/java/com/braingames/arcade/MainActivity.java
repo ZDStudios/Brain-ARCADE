@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.13.0";
+    private static final String BUNDLED_VERSION = "1.13.1";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";

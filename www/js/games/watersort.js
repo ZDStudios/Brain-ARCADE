@@ -22,10 +22,12 @@
         return [c, n];
     }
     function canPour(from, to) {
+        // Free pouring: any colour may go on top of any other. The only rules left
+        // are that a tube must have something to give, room to take it, and that a
+        // finished tube is not emptied into a spare one for nothing.
         if (from === to || !from.length || to.length >= CAP) return false;
-        if (!to.length) return from.length !== countSame(from);   // don't shuffle a done tube into an empty one
-        var f = topRun(from);
-        return to[to.length - 1] === f[0];
+        if (!to.length) return from.length !== countSame(from);
+        return true;
     }
     function countSame(tube) {
         if (!tube.length) return 0;
@@ -94,7 +96,7 @@
             emoji: "&#129380;", goal: "Pour the colours until every tube holds just one colour.",
             steps: [
                 "Tap a tube to pick up the colour on top, then tap another tube to pour it.",
-                "You can only pour onto the SAME colour, or into an empty tube.",
+                "You can pour onto any colour, or into an empty tube — but a tube only holds four.",
                 "The empty tubes are your workspace — think before you fill them!",
                 "Tap Undo if you get stuck. Clear the board to reach the next level."
             ]
@@ -172,7 +174,7 @@
                 }
                 if (!canPour(tubes[sel], tubes[i])) {
                     api.sound.bad(); api.haptic(20);
-                    api.toast("You can only pour onto the same colour");
+                    api.toast("That tube is full");
                     sel = -1; draw();
                     return;
                 }
