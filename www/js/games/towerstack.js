@@ -1,14 +1,29 @@
-/* Tower Stack — time your tap to stack the blocks as high as you can */
+/* Tower Stack (3D) — time your tap to stack the blocks as high as you can.
+   Classic "Stack" mechanic: each block alternately slides along X then Z,
+   rendered as isometric 3D cuboids. Miss the overlap and the tower is done. */
 (function () {
+    var COS30 = Math.cos(Math.PI / 6), SIN30 = Math.sin(Math.PI / 6);
+    var WS = 280;              // world footprint (x/z both range 0..WS)
+    var BLOCK_H = 24;          // world-unit height of one block
+    var GRAV = 0.0022;         // world units / ms^2 for falling debris
+
+    function shade(hex, amt) {
+        var n = parseInt(hex.replace("#", ""), 16);
+        var r = Math.min(255, Math.max(0, (n >> 16) + amt));
+        var g = Math.min(255, Math.max(0, ((n >> 8) & 0xff) + amt));
+        var b = Math.min(255, Math.max(0, (n & 0xff) + amt));
+        return "rgb(" + r + "," + g + "," + b + ")";
+    }
+
     window.BrainGames.register({
         id: "towerstack", name: "Tower Stack", icon: "&#127959;",
         gradient: "linear-gradient(135deg,#F59E0B,#EF4444)",
         best: "high", bestLabel: "Tallest",
         difficulties: true,
         help: {
-            emoji: "&#127959;", goal: "Stack the blocks to build the tallest tower.",
+            emoji: "&#127959;", goal: "Stack the blocks to build the tallest 3D tower.",
             steps: [
-                "A block slides back and forth at the top.",
+                "A block slides back and forth — first along one side, then the other.",
                 "Tap the screen (or press OK) to drop it.",
                 "Line it up with the block below — the overhang gets sliced off!",
                 "Miss completely and the tower is finished."
@@ -18,12 +33,14 @@
             var sp = api.space();
             var W = Math.round(Math.min(sp.w, 420));
             var H = Math.round(Math.min(sp.h, W * 1.3));
-            var SPEEDS = { easy: 0.10, medium: 0.16, hard: 0.24 };
+            var SPEEDS = { easy: 0.075, medium: 0.11, hard: 0.16 };
             var baseSpeed = SPEEDS[api.difficulty] || SPEEDS.medium;
 
             var COLORS = ["#7C5CFF", "#22D3EE", "#34D399", "#FBBF24", "#F472B6", "#60A5FA", "#FB923C"];
-            var BH = Math.max(16, Math.round(H / 16));      // block height
-            var stack, moving, raf = null, last = 0, over = false, score = 0, camera = 0;
+            var scale = (Math.min(W, H) * 0.86) / (WS * 1.9);
+            var originX = W / 2, originY = H * 0.8;
+
+            var stack, moving, debris, raf = null, last = 0, over = false, score = 0, camera = 0;
 
             var sScore = stat("Height", "0"), sBest = stat("Tallest", (api.getBest() || 0) + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sScore.box, sBest.box]));
@@ -41,10 +58,28 @@
                 return { box: api.el("div", { class: "stat" }, [api.el("div", { class: "k", text: k }), val]), val: val };
             }
 
+            /* ---------- projection ---------- */
+            function project(x, z, y) {
+                var effY = y - camera;
+                return {
+                    x: originX + (x - z) * COS30 * scale,
+                    y: originY + (x + z) * SIN30 * scale - effY * scale
+                };
+            }
+            function poly(pts, fill) {
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                ctx.closePath();
+                ctx.fillStyle = fill;
+                ctx.fill();
+            }
+
+            /* ---------- state ---------- */
             function reset() {
-                over = false; score = 0; camera = 0; last = 0;
-                var w0 = Math.round(W * 0.55);
-                stack = [{ x: Math.round((W - w0) / 2), w: w0, color: COLORS[0] }];
+                over = false; score = 0; camera = 0; last = 0; debris = [];
+                var w0 = WS * 0.6, off = (WS - w0) / 2;
+                stack = [{ x0: off, x1: off + w0, z0: off, z1: off + w0, color: COLORS[0] }];
                 spawn();
                 sScore.val.textContent = "0";
                 sBest.val.textContent = api.getBest() || 0;
@@ -52,21 +87,54 @@
             }
             function spawn() {
                 var top = stack[stack.length - 1];
+                var axis = stack.length % 2;               // 0 = slides on X, 1 = slides on Z
+                var len = axis === 0 ? (top.x1 - top.x0) : (top.z1 - top.z0);
                 moving = {
-                    x: 0, w: top.w, dir: 1,
+                    axis: axis, len: len, t: 0, dir: 1,
                     speed: baseSpeed * (1 + Math.min(1.2, score * 0.03)),
-                    color: COLORS[stack.length % COLORS.length]
+                    color: COLORS[stack.length % COLORS.length],
+                    fx0: top.x0, fx1: top.x1, fz0: top.z0, fz1: top.z1
                 };
             }
+            function movingExtent() {
+                if (moving.axis === 0) return { x0: moving.t, x1: moving.t + moving.len, z0: moving.fz0, z1: moving.fz1 };
+                return { x0: moving.fx0, x1: moving.fx1, z0: moving.t, z1: moving.t + moving.len };
+            }
+
             function drop() {
                 if (over || !moving) return;
                 var top = stack[stack.length - 1];
-                var left = Math.max(moving.x, top.x);
-                var right = Math.min(moving.x + moving.w, top.x + top.w);
-                var overlapW = right - left;
-                if (overlapW <= 2) { return gameOver(); }
-                var perfect = Math.abs(moving.x - top.x) <= 3;
-                stack.push({ x: left, w: perfect ? top.w : overlapW, color: moving.color, pop: 1 });
+                var m = movingExtent();
+                var level = stack.length;
+                var perfect, left, right, overlap, cut;
+
+                if (moving.axis === 0) {
+                    left = Math.max(m.x0, top.x0); right = Math.min(m.x1, top.x1);
+                    overlap = right - left;
+                    if (overlap <= 1.5) return gameOver();
+                    perfect = Math.abs(m.x0 - top.x0) <= Math.min(4, moving.len * 0.06);
+                    var nx0 = left, nx1 = perfect ? top.x1 : right;
+                    if (!perfect) {
+                        cut = m.x0 < left
+                            ? { x0: m.x0, x1: left, z0: top.z0, z1: top.z1 }
+                            : (m.x1 > right ? { x0: right, x1: m.x1, z0: top.z0, z1: top.z1 } : null);
+                    }
+                    stack.push({ x0: nx0, x1: nx1, z0: top.z0, z1: top.z1, color: moving.color, pop: 1, perfect: perfect });
+                } else {
+                    left = Math.max(m.z0, top.z0); right = Math.min(m.z1, top.z1);
+                    overlap = right - left;
+                    if (overlap <= 1.5) return gameOver();
+                    perfect = Math.abs(m.z0 - top.z0) <= Math.min(4, moving.len * 0.06);
+                    var nz0 = left, nz1 = perfect ? top.z1 : right;
+                    if (!perfect) {
+                        cut = m.z0 < left
+                            ? { x0: top.x0, x1: top.x1, z0: m.z0, z1: left }
+                            : (m.z1 > right ? { x0: top.x0, x1: top.x1, z0: right, z1: m.z1 } : null);
+                    }
+                    stack.push({ x0: top.x0, x1: top.x1, z0: nz0, z1: nz1, color: moving.color, pop: 1, perfect: perfect });
+                }
+                if (cut) debris.push({ x0: cut.x0, x1: cut.x1, z0: cut.z0, z1: cut.z1, level: level, color: moving.color, vy: 0, fall: 0, alpha: 1 });
+
                 score++;
                 sScore.val.textContent = String(score);
                 if (perfect) { api.sound.good(); api.haptic(14); }
@@ -84,54 +152,73 @@
                 });
             }
 
+            /* ---------- loop ---------- */
             function step(dt) {
-                if (!moving) return;
-                moving.x += moving.dir * moving.speed * dt;
-                if (moving.x <= 0) { moving.x = 0; moving.dir = 1; }
-                if (moving.x + moving.w >= W) { moving.x = W - moving.w; moving.dir = -1; }
-                // keep the top of the tower in view
-                var targetCam = Math.max(0, (stack.length + 2) * BH - H * 0.75);
-                camera += (targetCam - camera) * Math.min(1, dt / 180);
+                if (moving) {
+                    var max = WS - moving.len;
+                    moving.t += moving.dir * moving.speed * dt;
+                    if (moving.t <= 0) { moving.t = 0; moving.dir = 1; }
+                    if (moving.t >= max) { moving.t = max; moving.dir = -1; }
+                }
+                var targetCam = Math.max(0, (stack.length - 6) * BLOCK_H);
+                camera += (targetCam - camera) * Math.min(1, dt / 200);
                 for (var i = 0; i < stack.length; i++) if (stack[i].pop) stack[i].pop = Math.max(0, stack[i].pop - dt / 160);
+                for (var d = debris.length - 1; d >= 0; d--) {
+                    var b = debris[d];
+                    b.vy += GRAV * dt;
+                    b.fall += b.vy * dt;
+                    b.alpha -= dt / 700;
+                    if (b.alpha <= 0 || b.fall > BLOCK_H * 8) debris.splice(d, 1);
+                }
             }
-            function yFor(level) { return H - BH - level * BH + camera; }
+
+            function drawBlock(b, i, squashOverride) {
+                var yBottom = i * BLOCK_H, yTop = yBottom + BLOCK_H;
+                var sq = squashOverride != null ? squashOverride : (b.pop || 0);
+                var pad = sq * 6, hTop = yTop - sq * BLOCK_H * 0.5;
+                var x0 = b.x0 - pad, x1 = b.x1 + pad, z0 = b.z0 - pad, z1 = b.z1 + pad;
+                var fA = project(x0, z1, yBottom), fB = project(x1, z1, yBottom), fC = project(x1, z1, hTop), fD = project(x0, z1, hTop);
+                var rA = project(x1, z0, yBottom), rB = project(x1, z1, yBottom), rC = project(x1, z1, hTop), rD = project(x1, z0, hTop);
+                var tA = project(x0, z0, hTop), tB = project(x1, z0, hTop), tC = project(x1, z1, hTop), tD = project(x0, z1, hTop);
+                poly([fA, fB, fC, fD], shade(b.color, -50));
+                poly([rA, rB, rC, rD], shade(b.color, -22));
+                poly([tA, tB, tC, tD], shade(b.color, 20));
+                if (b.perfect && b.pop) {
+                    ctx.save(); ctx.globalAlpha = Math.max(0, b.pop);
+                    ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(tA.x, tA.y); ctx.lineTo(tB.x, tB.y); ctx.lineTo(tC.x, tC.y); ctx.lineTo(tD.x, tD.y); ctx.closePath(); ctx.stroke();
+                    ctx.restore();
+                }
+            }
+            function drawDebris(b) {
+                var yBottom = b.level * BLOCK_H - b.fall, yTop = yBottom + BLOCK_H;
+                var fA = project(b.x0, b.z1, yBottom), fB = project(b.x1, b.z1, yBottom), fC = project(b.x1, b.z1, yTop), fD = project(b.x0, b.z1, yTop);
+                var rA = project(b.x1, b.z0, yBottom), rB = project(b.x1, b.z1, yBottom), rC = project(b.x1, b.z1, yTop), rD = project(b.x1, b.z0, yTop);
+                var tA = project(b.x0, b.z0, yTop), tB = project(b.x1, b.z0, yTop), tC = project(b.x1, b.z1, yTop), tD = project(b.x0, b.z1, yTop);
+                ctx.save(); ctx.globalAlpha = Math.max(0, b.alpha);
+                poly([fA, fB, fC, fD], shade(b.color, -50));
+                poly([rA, rB, rC, rD], shade(b.color, -22));
+                poly([tA, tB, tC, tD], shade(b.color, 20));
+                ctx.restore();
+            }
             function draw() {
                 var g = ctx.createLinearGradient(0, 0, 0, H);
                 g.addColorStop(0, "#131C36"); g.addColorStop(1, "#0B1020");
                 ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-                // ground
-                ctx.fillStyle = "rgba(255,255,255,.06)";
-                ctx.fillRect(0, yFor(0) + BH, W, H);
-                var i, b, y;
-                for (i = 0; i < stack.length; i++) {
-                    b = stack[i]; y = yFor(i);
-                    if (y > H + BH || y < -BH * 2) continue;
-                    var squash = b.pop ? 1 + b.pop * 0.25 : 1;
-                    ctx.fillStyle = b.color;
-                    var h = BH * (b.pop ? 1 / squash : 1);
-                    roundRect(b.x, y + (BH - h), b.w, h, Math.min(6, BH / 3));
-                    ctx.fillStyle = "rgba(255,255,255,.16)";
-                    roundRect(b.x, y + (BH - h), b.w, Math.max(2, h * 0.28), Math.min(6, BH / 3));
-                }
+
+                // ground diamond
+                var g0 = project(0, 0, -camera <= -1e9 ? 0 : 0), g1 = project(WS, 0, 0), g2 = project(WS, WS, 0), g3 = project(0, WS, 0);
+                var gb0 = project(0, 0, -camera), gb1 = project(WS, 0, -camera), gb2 = project(WS, WS, -camera), gb3 = project(0, WS, -camera);
+                ctx.save(); ctx.globalAlpha = 0.5;
+                poly([project(0, 0, 0), project(WS, 0, 0), project(WS, WS, 0), project(0, WS, 0)], "rgba(255,255,255,.05)");
+                ctx.restore();
+
+                for (var i = 0; i < stack.length; i++) drawBlock(stack[i], i);
+                for (var d = 0; d < debris.length; d++) drawDebris(debris[d]);
                 if (moving && !over) {
-                    y = yFor(stack.length);
-                    ctx.fillStyle = moving.color;
-                    roundRect(moving.x, y, moving.w, BH, Math.min(6, BH / 3));
-                    // drop guide
-                    ctx.strokeStyle = "rgba(255,255,255,.22)";
-                    ctx.setLineDash([4, 5]); ctx.lineWidth = 1;
-                    ctx.beginPath(); ctx.moveTo(moving.x + moving.w / 2, y + BH); ctx.lineTo(moving.x + moving.w / 2, H); ctx.stroke();
-                    ctx.setLineDash([]);
+                    var m = movingExtent();
+                    drawBlock({ x0: m.x0, x1: m.x1, z0: m.z0, z1: m.z1, color: moving.color, pop: 0 }, stack.length, 0);
                 }
-            }
-            function roundRect(x, y, w, h, r) {
-                ctx.beginPath();
-                ctx.moveTo(x + r, y);
-                ctx.arcTo(x + w, y, x + w, y + h, r);
-                ctx.arcTo(x + w, y + h, x, y + h, r);
-                ctx.arcTo(x, y + h, x, y, r);
-                ctx.arcTo(x, y, x + w, y, r);
-                ctx.closePath(); ctx.fill();
             }
             function loop(ts) {
                 raf = requestAnimationFrame(loop);
