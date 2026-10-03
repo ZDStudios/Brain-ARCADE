@@ -1,6 +1,6 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **30 brain games** — Chess, Tetris,
+An offline Android **and Android TV** arcade with **34 brain games** — Chess, Tetris,
 Solitaire, Rush Hour, Wordle, 2048, Reversi, a 3D spatial-memory game and a
 head-to-head multiplayer race — plus WiFi auto-updates, a built-in kiosk lock, and
 a remote control dashboard.
@@ -72,6 +72,26 @@ Stuck on a word? **💡 Hint** fills one letter of the answer into the row you a
 typing, at its real position, and locks that square so you cannot type over it or
 delete it. Two per word — enough to unstick a child, not enough to solve it for them.
 The win panel says how many you used.
+
+## 🆕 Four games built to be "one more go"
+Each is short, scored, and has a visible streak or rank to chase — the hook — while
+training something specific. None of them is arithmetic.
+
+| Game | Trains | The hook |
+| --- | --- | --- |
+| 🐝 **Spelling Bee** | Vocabulary, spelling, word retrieval | Ranks from Beginner to **Queen Bee**, a gold **PANGRAM** bonus for using all seven letters, a fresh hive every day |
+| ⚡ **Speed Match** | Working memory, processing speed (an n-back task; Hard is 2-back) | Combo multiplier up to **x5** that resets on a slip, 60-second rounds |
+| 🔀 **Switch Sort** | Cognitive flexibility (task switching) | The rule flips mid-round between colour and shape; speed bonus for fast hands |
+| 🚰 **Pipe Flow** | Spatial reasoning and planning | Water floods every pipe you connect and houses light up; boards grow every three levels |
+
+**Spelling Bee** uses the newspaper rules: 4+ letters, the gold centre letter in every
+word, letters may repeat. Its 150 puzzles are built from the *common* tiers of the
+SCOWL word lists (MIT), so every word you are scored on is one a child could know;
+rarer real words still count as bonus words. Offensive words are filtered out, and no
+puzzle uses S, so it never turns into a plurals hunt. Progress on each hive is kept.
+
+**Pipe Flow** boards are built from a random spanning tree rooted at the tap and then
+scrambled, so every board has a solution that uses every pipe with no leaks.
 
 ## 🥤 Water Sort
 Pour the colours until every tube holds just one. You can only pour onto the same

@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.13.1";
+    var VERSION = "1.14.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -616,6 +616,7 @@
         { id: "strategy", name: "Strategy", emoji: "&#9822;" },
         { id: "arcade",   name: "Arcade",   emoji: "&#127923;" },
         { id: "memory",   name: "Memory",   emoji: "&#129504;" },
+        { id: "focus",    name: "Focus",    emoji: "&#127919;" },
         { id: "versus",   name: "Versus",   emoji: "&#127937;" }
     ];
     var GAME_CATEGORY = {
@@ -625,7 +626,8 @@
         chess: "strategy", reversi: "strategy", c4: "strategy", ttt: "strategy", solitaire: "strategy",
         snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
         memory: "memory", simon: "memory", stroop: "memory", cube3d: "memory",
-        race: "versus", watersort: "puzzle"
+        race: "versus", watersort: "puzzle",
+        spellingbee: "words", pipes: "puzzle", speedmatch: "focus", switchsort: "focus"
     };
     function categoryOf(id) { return GAME_CATEGORY[id] || "arcade"; }
 

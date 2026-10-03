@@ -795,3 +795,98 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .ws-tube.done { border-color:var(--good); }
 .ws-tube.nav-here { outline:3px solid var(--accent-2); outline-offset:3px; }
 .ws-tube:active { transform:scale(.97); }
+
+/* --- Spelling Bee --- */
+.bee-top { margin-bottom:10px; }
+.bee-rank-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+.bee-rank-name { font-weight:900; font-size:17px; }
+.bee-score { font-weight:800; color:var(--muted); font-size:14px; }
+.bee-rank-bar { height:10px; border-radius:6px; background:var(--card-2); border:1px solid var(--line); overflow:hidden; }
+.bee-rank-fill { display:block; height:100%; width:0; background:linear-gradient(90deg,#F59E0B,#FDE047); transition:width .4s ease; }
+.bee-found { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 12px; margin-bottom:12px; }
+.bee-found-head { font-size:12.5px; color:var(--muted); font-weight:700; margin-bottom:6px; }
+.bee-found-list { display:flex; flex-wrap:wrap; gap:6px; max-height:96px; overflow-y:auto; }
+.bee-word { font-size:13px; font-weight:700; padding:3px 9px; border-radius:12px; background:var(--card-2); text-transform:capitalize; }
+.bee-word.pg { background:linear-gradient(90deg,#F59E0B,#FDE047); color:#1C1302; }
+.bee-input { min-height:46px; display:flex; justify-content:center; align-items:center; gap:2px; font-size:30px; font-weight:900; letter-spacing:1px; margin-bottom:6px; }
+.bee-ch.c { color:#FBBF24; }
+.bee-ch.bad { color:var(--muted); }
+.bee-caret { width:3px; height:32px; background:#FBBF24; animation:beeBlink 1s steps(2) infinite; }
+@keyframes beeBlink { 50% { opacity:0; } }
+.bee-hive { position:relative; width:252px; height:270px; margin:4px auto 12px; }
+.bee-cell { position:absolute; width:86px; height:78px; border:none; cursor:pointer;
+    clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%);
+    background:var(--card-2); color:var(--text); font-size:28px; font-weight:900; transition:transform .1s; }
+.bee-cell.centre { background:linear-gradient(135deg,#F59E0B,#FDE047); color:#1C1302; }
+.bee-cell:active, .bee-cell.tap { transform:scale(.9); }
+.bee-cell[data-slot="0"] { left:83px;  top:96px; }
+.bee-cell[data-slot="1"] { left:83px;  top:14px; }
+.bee-cell[data-slot="2"] { left:154px; top:55px; }
+.bee-cell[data-slot="3"] { left:154px; top:137px; }
+.bee-cell[data-slot="4"] { left:83px;  top:178px; }
+.bee-cell[data-slot="5"] { left:12px;  top:137px; }
+.bee-cell[data-slot="6"] { left:12px;  top:55px; }
+.bee-shuffle { font-size:20px; }
+
+/* --- Speed Match & Switch Sort (shared feel) --- */
+.sm-streak { height:6px; border-radius:4px; background:var(--card-2); overflow:hidden; margin:-4px 0 12px; }
+.sm-streak-fill { display:block; height:100%; width:0; background:linear-gradient(90deg,#22D3EE,#A78BFA); transition:width .2s; }
+.sm-prompt { text-align:center; font-weight:800; font-size:17px; margin-bottom:12px; }
+.sm-stage { position:relative; display:grid; place-items:center; height:190px; }
+.sm-card { width:170px; height:170px; border-radius:24px; display:grid; place-items:center;
+    background:var(--card); border:2px solid var(--line); box-shadow:var(--shadow); line-height:0; }
+.sm-card.flip { animation:smFlip .22s ease; }
+@keyframes smFlip { from { transform:rotateY(90deg) scale(.9); } to { transform:rotateY(0) scale(1); } }
+.sm-card.good { border-color:var(--good); box-shadow:0 0 22px color-mix(in srgb, var(--good) 50%, transparent); }
+.sm-card.bad { border-color:var(--bad); animation:smShake .3s; }
+@keyframes smShake { 25% { transform:translateX(-8px); } 75% { transform:translateX(8px); } }
+.sm-pop { position:absolute; top:6px; font-size:24px; font-weight:900; color:var(--good); pointer-events:none;
+    animation:smPop .65s ease-out forwards; }
+.sm-pop.bad { color:var(--bad); font-size:18px; }
+@keyframes smPop { from { transform:translateY(10px); opacity:1; } to { transform:translateY(-34px); opacity:0; } }
+.sm-buttons { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+.sm-buttons .btn { padding:20px 0; font-size:21px; font-weight:900; }
+.sm-yes { background:color-mix(in srgb, var(--good) 28%, var(--card)); border-color:var(--good); }
+.sm-no { background:color-mix(in srgb, var(--bad) 22%, var(--card)); border-color:var(--bad); }
+.sm-hot { box-shadow:0 0 16px color-mix(in srgb, #F97316 55%, transparent); border-color:#F97316 !important; }
+.sm-hurry .v { color:var(--bad); }
+
+.ss-rule { text-align:center; font-size:19px; font-weight:800; padding:10px; border-radius:14px; margin-bottom:12px;
+    background:var(--card); border:2px solid var(--line); transition:background .3s, border-color .3s; }
+.ss-rule.colour { border-color:#60A5FA; }
+.ss-rule.shape { border-color:#E5E7EB; }
+.ss-rule.switch { animation:ssSwitch .6s ease; }
+@keyframes ssSwitch { 0%,100% { transform:scale(1); } 40% { transform:scale(1.08); background:color-mix(in srgb, var(--warn) 35%, var(--card)); } }
+.ss-stage { position:relative; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; height:200px; }
+.ss-bin { height:100%; border-radius:18px; border:2px dashed var(--line); background:var(--card); color:var(--text);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; font-size:12px; font-weight:800; cursor:pointer; }
+.ss-bin:active { transform:scale(.97); background:var(--card-2); }
+.ss-chip { width:34px; height:34px; border-radius:50%; display:block; }
+.ss-card { width:140px; height:140px; border-radius:22px; display:grid; place-items:center; background:var(--card-2);
+    border:2px solid var(--line); touch-action:none; line-height:0; cursor:grab; }
+.ss-card.in { animation:smFlip .18s ease; }
+.ss-card.fly-left { transform:translateX(-90px) rotate(-12deg); opacity:.2; transition:all .16s; }
+.ss-card.fly-right { transform:translateX(90px) rotate(12deg); opacity:.2; transition:all .16s; }
+.ss-card.good { border-color:var(--good); }
+.ss-card.bad { border-color:var(--bad); }
+
+/* --- Pipe Flow --- */
+.pf-grid { display:grid; gap:4px; justify-content:center; }
+.pf-tile { padding:0; border:none; border-radius:10px; background:var(--card-2); cursor:pointer; overflow:hidden; }
+.pf-tile:active { filter:brightness(1.2); }
+.pf-tile.nav-here { outline:3px solid var(--accent-2); outline-offset:1px; }
+.pf-spin { width:100%; height:100%; transition:transform .16s ease-out; }
+.pf-svg { width:100%; height:100%; display:block; }
+.pf-pipe { stroke:#475569; stroke-width:20; stroke-linecap:round; fill:#475569; transition:stroke .2s, fill .2s; }
+.pf-tile.wet .pf-pipe { stroke:#38BDF8; fill:#38BDF8; filter:drop-shadow(0 0 5px rgba(56,189,248,.65)); }
+.pf-pipe .pf-src { fill:#0EA5E9; stroke:#E0F2FE; stroke-width:5; }
+.pf-pipe .pf-house { fill:#64748B; stroke:none; }
+.pf-tile.wet .pf-house { fill:#FDE047; filter:drop-shadow(0 0 7px rgba(253,224,71,.8)); }
+.pf-grid.pf-won .pf-tile { animation:pfWin .6s ease; }
+@keyframes pfWin { 50% { transform:scale(1.08); } }
+:root.tv .sm-buttons .btn { font-size:26px; }
+
+/* The game area centres its children, so anything without a width shrink-wraps
+   to its content — which collapsed the Bee's rank bar and Speed Match's buttons. */
+.bee-top, .bee-found, .sm-streak, .sm-buttons, .sm-stage, .ss-rule, .ss-stage { width:100%; max-width:440px; }
+.bee-found { box-sizing:border-box; }
