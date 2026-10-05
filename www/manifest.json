@@ -1,9 +1,10 @@
 {
-  "version": "1.14.0",
+  "version": "1.15.0",
   "files": [
     "css/style.css",
     "index.html",
     "js/app.js",
+    "js/games/airhockey.js",
     "js/games/bee-words.js",
     "js/games/blockblast.js",
     "js/games/breakout.js",

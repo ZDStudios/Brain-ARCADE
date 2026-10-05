@@ -1,6 +1,6 @@
 # 🧠 Brain Arcade
 
-An offline Android **and Android TV** arcade with **34 brain games** — Chess, Tetris,
+An offline Android **and Android TV** arcade with **35 brain games** — Chess, Tetris,
 Solitaire, Rush Hour, Wordle, 2048, Reversi, a 3D spatial-memory game and a
 head-to-head multiplayer race — plus WiFi auto-updates, a built-in kiosk lock, and
 a remote control dashboard.
@@ -92,6 +92,19 @@ puzzle uses S, so it never turns into a plurals hunt. Progress on each hive is k
 
 **Pipe Flow** boards are built from a random spanning tree rooted at the tap and then
 scrambled, so every board has a solution that uses every pipe with no leaks.
+
+## 🏒 Air Hockey
+You against a bot on a glowing rink. Drag your blue mallet anywhere in your half (it
+cannot cross the centre line), smash the puck off the walls and into the bot's goal at
+the top — first to 7 wins. The puck has real physics: it keeps the speed of your swing,
+bounces off the side walls and goal posts and slowly glides to a stop.
+
+- **Easy / Medium / Hard** change how fast the bot moves, how quickly it reacts and how
+  often it comes forward to attack instead of guarding its goal.
+- After a goal the puck is placed in the half of whoever conceded, like the real game.
+- The rink freezes while the how-to-play panel is open, so nobody concedes while reading.
+- The score is saved after every goal, so a closed app picks up where it left off.
+- Arrow keys / a TV remote move the mallet too.
 
 ## 🥤 Water Sort
 Pour the colours until every tube holds just one. You can only pour onto the same

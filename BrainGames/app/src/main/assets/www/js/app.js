@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.14.0";
+    var VERSION = "1.15.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -624,7 +624,7 @@
         wordle: "words", wordsearch: "words",
         sudoku: "puzzle", mines: "puzzle", puzzle15: "puzzle", rushhour: "puzzle", blockblast: "puzzle", g2048: "puzzle", tetris: "puzzle",
         chess: "strategy", reversi: "strategy", c4: "strategy", ttt: "strategy", solitaire: "strategy",
-        snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
+        snake: "arcade", flappy: "arcade", breakout: "arcade", pong: "arcade", airhockey: "arcade", whack: "arcade", fruitcatch: "arcade", towerstack: "arcade", reaction: "arcade",
         memory: "memory", simon: "memory", stroop: "memory", cube3d: "memory",
         race: "versus", watersort: "puzzle",
         spellingbee: "words", pipes: "puzzle", speedmatch: "focus", switchsort: "focus"
