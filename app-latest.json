@@ -1,6 +1,6 @@
 {
-  "versionCode": 25,
-  "versionName": "1.16.0",
+  "versionCode": 26,
+  "versionName": "1.17.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "If the main server is down, tablets now find and connect to Brain Arcade Server running on a computer on your WiFi \u2014 and switch back automatically when the main server returns."
 }
