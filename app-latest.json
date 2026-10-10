@@ -1,6 +1,6 @@
 {
-  "versionCode": 30,
-  "versionName": "1.21.0",
+  "versionCode": 31,
+  "versionName": "1.22.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "Fixes remote control going blank when the tablet is scrolled down, taps landing in the wrong place, and the dashboard showing 'In Settings' after leaving it. The dashboard now saves changes by itself."
 }
