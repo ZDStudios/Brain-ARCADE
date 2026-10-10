@@ -2,5 +2,5 @@
   "versionCode": 28,
   "versionName": "1.19.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Fixes connecting to Brain Arcade Server on your computer: tablets now use it whenever it is running, and Settings can test a typed-in address and explain what is wrong."
+  "notes": "Instant remote control on your WiFi server, a grown-up Unlock button on the Time's up screen, a screensaver that puts the tablet to sleep when nobody is using it, and smoother animations."
 }

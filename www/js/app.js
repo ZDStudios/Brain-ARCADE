@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.19.0";
+    var VERSION = "1.20.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -443,15 +443,55 @@
         screenTime.ms += ms; save("screenTime", screenTime);
         enforceLimit();
     }
-    function limitReached() { return limitMin() > 0 && screenTime.day === todayKey() && screenTime.ms >= limitMin() * 60000; }
-    function minutesLeft() { return Math.max(0, Math.ceil((limitMin() * 60000 - screenTime.ms) / 60000)); }
+    // A grown-up can give extra time from the time's-up screen (PIN 1234); it only
+    // lasts for today.
+    var UNLOCK_PIN = "1234";
+    function todayAllowanceMs() {
+        if (screenTime.day !== todayKey()) return limitMin() * 60000;
+        if (screenTime.unlimited) return Infinity;
+        return (limitMin() + (screenTime.bonusMin || 0)) * 60000;
+    }
+    function limitReached() { return limitMin() > 0 && screenTime.day === todayKey() && screenTime.ms >= todayAllowanceMs(); }
+    function minutesLeft() { var a = todayAllowanceMs(); return a === Infinity ? 999 : Math.max(0, Math.ceil((a - screenTime.ms) / 60000)); }
+    function grantTime(min) {
+        if (screenTime.day !== todayKey()) screenTime = { day: todayKey(), ms: 0 };
+        if (min === "all") screenTime.unlimited = true;
+        else {
+            // Extra time starts from now, not from when the limit was hit.
+            var over = Math.max(0, screenTime.ms - todayAllowanceMs());
+            screenTime.bonusMin = (screenTime.bonusMin || 0) + min + Math.ceil(over / 60000);
+        }
+        save("screenTime", screenTime);
+        removeTimeUp(); Sound.good(); haptic(20);
+        toast(min === "all" ? "&#128275; No time limit for the rest of today" : "&#128275; " + min + " more minutes");
+        if (route === "home") renderHome();
+    }
+    function unlockTime() {
+        askPin(function () {
+            var ov = el("div", { class: "overlay over-lock" });
+            var row = el("div", { class: "unlock-grid" });
+            [[15, "+15 min"], [30, "+30 min"], [60, "+1 hour"], ["all", "No limit today"]].forEach(function (c) {
+                row.appendChild(el("button", { class: "btn" + (c[0] === 30 ? " primary" : ""), text: c[1], onclick: function () { close(); grantTime(c[0]); } }));
+            });
+            var panel = el("div", { class: "panel pop" }, [
+                el("div", { class: "big", html: "&#9203;" }),
+                el("h2", { text: "How much more time?" }),
+                el("p", { text: "Only for today. Tomorrow the normal limit is back." }),
+                row,
+                el("button", { class: "btn ghost", style: "width:100%;margin-top:10px", text: "Cancel", onclick: function () { close(); } })
+            ]);
+            ov.appendChild(panel); document.body.appendChild(ov);
+            function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+        }, { pin: UNLOCK_PIN, title: "Grown-up unlock", sub: "Enter the unlock PIN to give more play time.", icon: "&#128275;", top: true });
+    }
     function renderTimeUp() {
         if (document.getElementById("timeUpScreen")) return;
         var ls = el("div", { id: "timeUpScreen", class: "lock-screen fade-in" }, [
             el("div", { class: "lock-inner" }, [
                 el("div", { class: "lock-ico", html: "&#9203;" }),
                 el("h2", { text: "Time's up for today!" }),
-                el("p", { text: "You've played your " + limitMin() + " minutes. Come back tomorrow for more games." })
+                el("p", { text: "You've played your " + limitMin() + " minutes. Come back tomorrow for more games." }),
+                el("button", { class: "btn unlock-btn", html: "&#128275; Unlock", onclick: function () { Sound.click(); unlockTime(); } })
             ])
         ]);
         document.body.appendChild(ls);
@@ -713,16 +753,19 @@
     }
 
     /** Big-button keypad. Works with touch, a keyboard and a TV remote. */
-    function askPin(onOk) {
+    /** opts: { pin, title, sub, top } — defaults are the Settings PIN. */
+    function askPin(onOk, opts) {
+        opts = opts || {};
+        var PIN = opts.pin || ADULT_PIN;
         var entered = "";
-        var ov = el("div", { class: "overlay" });
+        var ov = el("div", { class: "overlay" + (opts.top ? " over-lock" : "") });
         var panel = el("div", { class: "panel pop pin-panel" });
-        var lock = el("div", { class: "big pin-lock", html: "&#128274;" });
+        var lock = el("div", { class: "big pin-lock", html: opts.icon || "&#128274;" });
         panel.appendChild(lock);
-        panel.appendChild(el("h2", { text: "Grown-ups only" }));
+        panel.appendChild(el("h2", { text: opts.title || "Grown-ups only" }));
         // Secret way to the kiosk panel: spam-tap the lock, then spam-tap the "Ha ha" pop-up.
-        spamTap(lock, 6, function () { haHa(function () { close(); openKioskAdmin(); }); });
-        panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 14px", text: "Enter the adult PIN to open Settings." }));
+        if (!opts.pin) spamTap(lock, 6, function () { haHa(function () { close(); openKioskAdmin(); }); });
+        panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 14px", text: opts.sub || "Enter the adult PIN to open Settings." }));
         var dots = el("div", { class: "pin-dots" });
         var dotEls = [];
         for (var d = 0; d < 4; d++) { var dot = el("i"); dotEls.push(dot); dots.appendChild(dot); }
@@ -765,7 +808,7 @@
             if (entered.length === 4) setTimeout(submit, 140);
         }
         function submit() {
-            if (entered === ADULT_PIN) {
+            if (entered === PIN) {
                 Sound.good(); haptic(18);
                 close();
                 if (onOk) onOk();
@@ -964,6 +1007,74 @@
         ov.appendChild(panel); document.body.appendChild(ov);
         function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
     }
+    /* ============================================================
+       Screensaver + sleep
+       Nobody has touched the tablet for a while (kiosk keeps the screen on, so a
+       forgotten tablet used to glow all night): a dim, slowly drifting
+       screensaver appears and the backlight goes down; a few minutes later the
+       tablet is put to sleep — screen off if Brain Arcade has been allowed to
+       lock it (Android device admin), otherwise dimmed with the keep-awake
+       released so Android's own screen timeout turns it off. A touch wakes it.
+       A game in progress is saved and can be continued from the home screen.
+       ============================================================ */
+    if (settings.idleMin === undefined) settings.idleMin = window.AndroidBridge ? 10 : 0;
+    var SLEEP_AFTER_SAVER = 3 * 60000;
+    var lastActive = Date.now(), saver = null, saverAt = 0, saverSlept = false, saverMove = null;
+    function noteActive(e) {
+        lastActive = Date.now();
+        // The screensaver covers everything, so the waking touch cannot land on a
+        // game underneath; the listeners stay passive so scrolling never stutters.
+        if (saver) { if (e && e.type === "keydown") { e.preventDefault(); e.stopPropagation(); } wakeSaver(); }
+    }
+    ["pointerdown", "touchstart", "wheel"].forEach(function (t) {
+        document.addEventListener(t, noteActive, { capture: true, passive: true });
+    });
+    document.addEventListener("keydown", noteActive, true);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) { lastActive = Date.now(); if (saver) wakeSaver(); } });
+    function startSaver(preview) {
+        if (saver) return;
+        if (route === "game" && !preview) go("home");      // saves the game; "Carry on" brings it back
+        saverAt = Date.now(); saverSlept = false;
+        var bubbles = el("div", { class: "sv-bubbles" });
+        ["&#129504;", "&#11088;", "&#127922;", "&#129513;", "&#127912;", "&#128640;", "&#127775;", "&#128142;"].forEach(function (e, i) {
+            bubbles.appendChild(el("span", { html: e, style: "left:" + (8 + i * 11.5) + "%;animation-delay:-" + (i * 2.7) + "s;animation-duration:" + (16 + (i % 3) * 5) + "s" }));
+        });
+        var clock = el("div", { class: "sv-clock" });
+        var date = el("div", { class: "sv-date" });
+        var card = el("div", { class: "sv-card" }, [ el("div", { class: "sv-logo", html: "&#129504;" }), clock, date, el("div", { class: "sv-hint", text: "Tap anywhere to wake up" }) ]);
+        saver = el("div", { id: "screensaver", class: "screensaver" }, [bubbles, card]);
+        document.body.appendChild(saver);
+        requestAnimationFrame(function () { if (saver) saver.classList.add("on"); });
+        function tick() {
+            var d = new Date();
+            clock.textContent = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+            date.textContent = d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+            // Drift slowly so nothing sits in one place on the screen for long.
+            card.style.transform = "translate(" + (Math.sin(d / 47000) * 22) + "vw," + (Math.cos(d / 61000) * 18) + "vh)";
+        }
+        tick(); saverMove = setInterval(tick, 5000);
+        bridgeCall("setScreenBrightness", null, 0.12);
+    }
+    function wakeSaver() {
+        if (!saver) return;
+        clearInterval(saverMove);
+        var s0 = saver; saver = null;
+        s0.classList.remove("on"); s0.classList.add("off");
+        setTimeout(function () { if (s0.parentNode) s0.parentNode.removeChild(s0); }, 350);
+        bridgeCall("wakeScreen", null);
+        lastActive = Date.now();
+    }
+    setInterval(function () {
+        var m = +settings.idleMin || 0;
+        // Never while somebody is watching remotely or the tablet is ringing.
+        if (!m || streaming || findingNow) { lastActive = Date.now(); return; }
+        if (!saver && Date.now() - lastActive >= m * 60000) startSaver(false);
+        else if (saver && !saverSlept && Date.now() - saverAt >= SLEEP_AFTER_SAVER) {
+            saverSlept = true; saver.classList.add("asleep");
+            bridgeCall("sleepScreen", "");
+        }
+    }, 5000);
+
     /* ---------- game on/off manager ---------- */
     function openGameManager() {
         var ov = el("div", { class: "overlay" });
@@ -1241,6 +1352,7 @@
             }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
         }
         function ok(data) {
+            if (usingLocal) startEvents();
             setDot(usingLocal ? "local" : "online");
             setServerLive(true);
             applyPolicy(data || {});
@@ -1427,28 +1539,78 @@
     function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
     /* ---------- on-demand screen streaming + remote taps ---------- */
-    var streaming = false, streamTimer = null;
+    /* Two speeds. On the Render server a frame goes up every 1.2s and taps arrive
+       with the next check-in — deliberately limited, it is a free cloud service.
+       On a WiFi server (Brain Arcade Server on a computer at home) frames go up as
+       fast as the tablet can make them (one at a time, so they never pile up),
+       identical frames are skipped, and taps/scrolls/commands arrive instantly
+       over a held-open /api/events request. */
+    var streaming = false, streamTimer = null, frameBusy = false, lastFrame = "", lastFrameAt = 0;
     function canCapture() { try { return !!(window.AndroidBridge && typeof window.AndroidBridge.captureScreen === "function"); } catch (e) { return false; } }
+    function fastLink() { return usingLocal && !!localUrl; }
+    function grabFrame() {
+        var B = window.AndroidBridge;
+        if (fastLink() && typeof B.captureScreenAt === "function") return B.captureScreenAt(640, 50);
+        return B.captureScreen();
+    }
+    function streamStep() {
+        if (!streaming || frameBusy) return;
+        clearTimeout(streamTimer);
+        var fast = fastLink(), url = serverUrl();
+        var b64 = "";
+        try { b64 = grabFrame(); } catch (e) {}
+        var same = b64 && b64 === lastFrame && Date.now() - lastFrameAt < 2000;
+        if (!b64 || !url || same) { streamTimer = setTimeout(streamStep, fast ? 70 : 1200); return; }
+        frameBusy = true;
+        lastFrame = b64; lastFrameAt = Date.now();
+        fetch(url + "/api/frame", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deviceId: deviceId, data: b64 })
+        }).catch(function () {}).then(function () {
+            frameBusy = false;
+            if (streaming) streamTimer = setTimeout(streamStep, fastLink() ? 40 : 1200);
+        });
+    }
     function startStream() {
         if (streaming) return;
         if (!canCapture()) return; // only the installed app can capture its own screen
-        streaming = true;
-        clearTimeout(streamTimer);
-        (function loop() {
-            if (!streaming) return;
-            try {
-                var b64 = window.AndroidBridge.captureScreen();
-                if (b64 && serverUrl()) {
-                    fetch(serverUrl() + "/api/frame", {
-                        method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ deviceId: deviceId, data: b64 })
-                    }).catch(function () {});
-                }
-            } catch (e) {}
-            streamTimer = setTimeout(loop, 1200);
-        })();
+        streaming = true; lastFrame = "";
+        streamStep();
     }
     function stopStream() { streaming = false; clearTimeout(streamTimer); }
+    /** After a remote tap or scroll, send the result right away instead of on the next tick. */
+    function kickFrame() {
+        if (!streaming || !fastLink()) return;
+        clearTimeout(streamTimer);
+        streamTimer = setTimeout(streamStep, 35);
+    }
+
+    // The instant channel to a WiFi server. Ends by itself when we leave it, and
+    // stops for good if the server is too old to have /api/events.
+    var evRunning = false, evSince = -1, evUnsupported = "";
+    function startEvents() {
+        if (evRunning || !fastLink() || evUnsupported === localUrl) return;
+        evRunning = true;
+        var base = localUrl;
+        (function next() {
+            if (!fastLink() || localUrl !== base) { evRunning = false; evSince = -1; return; }
+            var signal = "timeout" in AbortSignal ? AbortSignal.timeout(28000) : undefined;
+            fetch(base + "/api/events?deviceId=" + encodeURIComponent(deviceId) + "&since=" + evSince + "&timeout=20", { signal: signal })
+                .then(function (r) { if (r.status === 404) throw new Error("old server"); return r.json(); })
+                .then(function (d) {
+                    var changed = evSince !== -1 && d.v !== evSince;
+                    evSince = d.v;
+                    if (Array.isArray(d.input) && d.input.length) { d.input.forEach(applyRemoteInput); kickFrame(); }
+                    if (changed) poll();          // a command (stream on/off, lock, message...) is waiting
+                    next();
+                })
+                .catch(function (e) {
+                    evRunning = false; evSince = -1;
+                    if (e && e.message === "old server") { evUnsupported = base; return; }
+                    setTimeout(startEvents, 2000);
+                });
+        })();
+    }
     function applyRemoteInput(t) {
         if (!t) return;
         // Scrolling from the dashboard: dyFrac is a fraction of the screen height,
@@ -1504,12 +1666,17 @@
     function setView() { view = document.getElementById("view"); }
     function animateView() { view.classList.remove("view-enter"); void view.offsetWidth; view.classList.add("view-enter"); }
 
+    var homeQuiet = false;
     function renderHome() {
+        // Re-drawn in place (a server update, a policy change): no entrance
+        // animation and no jump back to the top — only real navigation animates.
+        var again = route === "home" && view.childNodes.length > 0, keepY = window.scrollY;
+        homeQuiet = again;
         route = "home"; routeArg = null; current = null;
         document.getElementById("backBtn").hidden = true;
         view.innerHTML = "";
         var list = GAMES.filter(function (g) { return allowed(g.id) && gameAvailable(g); });
-        var hero = el("div", { class: "hero fade-in" }, [
+        var hero = el("div", { class: "hero" + (again ? "" : " fade-in") }, [
             el("h1", { text: "Play. Think. Repeat." }),
             el("p", { text: list.length + " brain-teasing games in one arcade. Beat your best scores!" })
         ]);
@@ -1524,7 +1691,7 @@
         heroRow.appendChild(el("button", { class: "btn", html: "&#128202; My stats",
             onclick: function () { Sound.click(); haptic(8); go("stats"); } }));
         if (limitMin() > 0) {
-            heroRow.appendChild(el("span", { class: "time-left", html: "&#9203; " + minutesLeft() + " min left today" }));
+            heroRow.appendChild(el("span", { class: "time-left", html: screenTime.unlimited && screenTime.day === todayKey() ? "&#128275; No limit today" : "&#9203; " + minutesLeft() + " min left today" }));
         }
         hero.appendChild(heroRow);
         view.appendChild(hero);
@@ -1644,7 +1811,7 @@
             var best = getBest(def.id);
             var bestStr = best == null ? (tvActive() ? "Press OK to play" : "Tap to play")
                                        : (def.bestLabel || "Best") + ": " + best + (def.bestSuffix || "");
-            var card = el("div", { class: "game-card card-enter", style: "background:" + (def.gradient || "linear-gradient(135deg,#7C5CFF,#22D3EE)") + ";animation-delay:" + (i * 35) + "ms" }, [
+            var card = el("div", { class: "game-card" + (homeQuiet ? "" : " card-enter"), style: "background:" + (def.gradient || "linear-gradient(135deg,#7C5CFF,#22D3EE)") + ";animation-delay:" + (Math.min(i, 14) * 28) + "ms" }, [
                 el("div", { class: "art", style: def.art || "" }),
                 el("div", { class: "glass" }),
                 el("div", { class: "ico", html: def.icon || "&#127918;" }),
@@ -1666,7 +1833,9 @@
         view.appendChild(emptyNote);
         if (!list.length) view.appendChild(el("div", { class: "small-note", text: "No games are currently enabled." }));
         else view.appendChild(el("div", { class: "small-note", html: "Made with &#128150; — everything runs offline on your device." }));
-        animateView(); window.scrollTo(0, 0);
+        if (again) window.scrollTo(0, keepY);
+        else { animateView(); window.scrollTo(0, 0); }
+        homeQuiet = false;            // category chips etc. animate again
     }
 
     // Extra board reserve for games whose controls make them taller than the
@@ -1955,7 +2124,7 @@
             el("div", { class: "s-text" }, [
                 el("div", { class: "s-title", text: "Daily play limit" }),
                 el("div", { class: "s-sub", text: limitMin() > 0
-                    ? limitMin() + " min a day · " + minutesLeft() + " min left today"
+                    ? limitMin() + " min a day · " + (screenTime.unlimited && screenTime.day === todayKey() ? "unlocked for today" : minutesLeft() + " min left today")
                     : "Off — unlimited play" })
             ])
         ]));
@@ -1971,6 +2140,37 @@
             limSeg.appendChild(b);
         });
         g4.appendChild(limSeg);
+        // ---- screensaver / sleep ----
+        g4.appendChild(el("div", { class: "setting-row" }, [
+            el("div", { class: "s-ico", html: "&#128164;" }),
+            el("div", { class: "s-text" }, [
+                el("div", { class: "s-title", text: "Screensaver when nobody is playing" }),
+                el("div", { class: "s-sub", text: (+settings.idleMin ? "After " + settings.idleMin + " min without a touch, then sleep 3 min later" : "Off \u2014 the screen stays on") })
+            ]),
+            el("button", { class: "btn", text: "Preview", onclick: function () { Sound.click(); startSaver(true); } })
+        ]));
+        var idleSeg = el("div", { class: "seg", style: "margin:0 16px 15px" });
+        [[0, "Off"], [2, "2m"], [5, "5m"], [10, "10m"], [30, "30m"]].forEach(function (m) {
+            var bt = el("button", { class: (+settings.idleMin || 0) === m[0] ? "active" : "", text: m[1] });
+            bt.addEventListener("click", function () {
+                settings.idleMin = m[0]; save("settings", settings); lastActive = Date.now();
+                idleSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+                bt.classList.add("active"); Sound.click(); haptic(10);
+            });
+            idleSeg.appendChild(bt);
+        });
+        g4.appendChild(idleSeg);
+        if (window.AndroidBridge && typeof window.AndroidBridge.canSleepScreen === "function") {
+            var canOff = bridgeCall("canSleepScreen", false) === true;
+            g4.appendChild(el("div", { class: "setting-row" }, [
+                el("div", { class: "s-ico", html: "&#127769;" }),
+                el("div", { class: "s-text" }, [
+                    el("div", { class: "s-title", text: "Turn the screen fully off" }),
+                    el("div", { class: "s-sub", text: canOff ? "Allowed \u2705 \u2014 the tablet goes to sleep by itself" : "Allow Brain Arcade to lock the screen, or it only dims and waits for Android's screen timeout" })
+                ]),
+                canOff ? el("span") : el("button", { class: "btn", text: "Allow", onclick: function () { Sound.click(); bridgeCall("requestSleepPermission", null); } })
+            ]));
+        }
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#128260;" }),
             el("div", { class: "s-text" }, [

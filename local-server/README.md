@@ -76,6 +76,8 @@ Everything the Render dashboard does — it is a line-by-line port of
 - scores & play stats, with score backup
 - send a message, remote control (live screen + taps), kiosk mode on/off,
   "let them out", find-my-tablet (ring), update the app
+- **instant remote control** — far faster than on Render: the screen streams at 10+
+  updates a second and taps, scrolls and commands arrive immediately
 - the **Brain Race 3D** multiplayer lobby — tablets on the same WiFi can race
   each other with no internet at all
 - `/play/` — the whole arcade in any browser on your network

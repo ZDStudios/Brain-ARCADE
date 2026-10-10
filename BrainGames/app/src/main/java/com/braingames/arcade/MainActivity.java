@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.19.0";
+    private static final String BUNDLED_VERSION = "1.20.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -744,6 +744,77 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean isOnline() { return isOnlineInternal(); }
 
+        /* ---------- screensaver / sleep ----------
+           The web layer notices nobody has touched the tablet for a while and shows a
+           screensaver; these let it dim the real backlight and then put the tablet
+           to sleep, instead of a kiosk tablet glowing all night. */
+
+        /** 0..1 dims this window's backlight; anything below 0 hands it back to the system. */
+        @JavascriptInterface
+        public void setScreenBrightness(final float level) {
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    WindowManager.LayoutParams lp = getWindow().getAttributes();
+                    lp.screenBrightness = level < 0 ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE : Math.max(0.01f, Math.min(1f, level));
+                    getWindow().setAttributes(lp);
+                } catch (Exception ignored) {}
+            } });
+        }
+
+        /** True when Brain Arcade may switch the screen off itself (device admin "force lock"). */
+        @JavascriptInterface
+        public boolean canSleepScreen() {
+            try { return dpm != null && dpm.isAdminActive(KioskDeviceAdminReceiver.component(MainActivity.this)); } catch (Exception e) { return false; }
+        }
+
+        /** Shows Android's own "allow this app to lock the screen" page. */
+        @JavascriptInterface
+        public void requestSleepPermission() {
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    Intent i = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                    i.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, KioskDeviceAdminReceiver.component(MainActivity.this));
+                    i.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "Lets Brain Arcade turn the screen off when nobody has used the tablet for a while.");
+                    startActivity(i);
+                } catch (Exception ignored) {}
+            } });
+        }
+
+        /**
+         * Put the tablet to sleep. With the device-admin permission the screen goes
+         * off right now (lockNow); without it the screen stays dimmed and we stop
+         * holding it awake, so Android's normal screen timeout switches it off.
+         * Returns "off" or "dimmed".
+         */
+        @JavascriptInterface
+        public String sleepScreen() {
+            final boolean admin = canSleepScreen();
+            runOnUiThread(new Runnable() { public void run() {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                try {
+                    WindowManager.LayoutParams lp = getWindow().getAttributes();
+                    lp.screenBrightness = 0.01f;
+                    getWindow().setAttributes(lp);
+                } catch (Exception ignored) {}
+                if (admin) { try { dpm.lockNow(); } catch (Exception ignored) {} }
+            } });
+            return admin ? "off" : "dimmed";
+        }
+
+        /** Back from the screensaver: normal brightness, and kiosk holds the screen on again. */
+        @JavascriptInterface
+        public void wakeScreen() {
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    WindowManager.LayoutParams lp = getWindow().getAttributes();
+                    lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+                    getWindow().setAttributes(lp);
+                } catch (Exception ignored) {}
+                if (isKioskEnabled()) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } });
+        }
+
         /** Start looking for a Brain Arcade server on this WiFi (see LanDiscovery). */
         @JavascriptInterface
         public void findLocalServer() { LanDiscovery.start(); }
@@ -907,28 +978,34 @@ public class MainActivity extends Activity {
 
         /** Capture the current WebView as a small base64 JPEG (for on-demand remote view). */
         @JavascriptInterface
-        public String captureScreen() {
+        public String captureScreen() { return captureScreenAt(480, 45); }
+
+        /**
+         * Screen frame as base64 JPEG, maxW pixels wide. Draws straight into a small
+         * bitmap (canvas scaled down) instead of a full-size copy that is then
+         * shrunk, which roughly halves the time per frame — that is what lets the
+         * WiFi remote control run at several frames a second.
+         */
+        @JavascriptInterface
+        public String captureScreenAt(final int maxWIn, final int qualityIn) {
+            final int maxW = Math.max(160, Math.min(1080, maxWIn));
+            final int quality = Math.max(20, Math.min(90, qualityIn));
             final String[] result = { "" };
             final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
             runOnUiThread(new Runnable() { public void run() {
                 try {
                     int w = webView.getWidth(), h = webView.getHeight();
                     if (w <= 0 || h <= 0) { latch.countDown(); return; }
-                    Bitmap full = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565);
-                    Canvas c = new Canvas(full);
+                    float scale = w > maxW ? maxW / (float) w : 1f;
+                    int bw = Math.max(1, Math.round(w * scale)), bh = Math.max(1, Math.round(h * scale));
+                    Bitmap small = Bitmap.createBitmap(bw, bh, Bitmap.Config.RGB_565);
+                    Canvas c = new Canvas(small);
+                    c.scale(scale, scale);
                     webView.draw(c);
-                    // Scale down so frames stay small over the network.
-                    int maxW = 480;
-                    Bitmap small = full;
-                    if (w > maxW) {
-                        int nh = Math.round(h * (maxW / (float) w));
-                        small = Bitmap.createScaledBitmap(full, maxW, nh, true);
-                    }
                     java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                    small.compress(Bitmap.CompressFormat.JPEG, 45, bos);
+                    small.compress(Bitmap.CompressFormat.JPEG, quality, bos);
                     result[0] = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
-                    if (small != full) small.recycle();
-                    full.recycle();
+                    small.recycle();
                 } catch (Throwable t) {
                     result[0] = "";
                 } finally { latch.countDown(); }

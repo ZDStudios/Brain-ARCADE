@@ -69,6 +69,7 @@
     @keyframes tapfade { from{transform:scale(.4);opacity:1;} to{transform:scale(1.4);opacity:0;} }
     .modal .mhint { color:var(--muted); font-size:12px; margin-top:10px; text-align:center; max-width:520px; }
     .rc-controls { display:flex; gap:10px; margin-top:12px; width:100%; max-width:520px; }
+    .rc-speed { display:inline-block; font-weight:700; color:var(--text); margin-bottom:4px; }
     .rc-controls .btn { flex:1; }
 
     /* ===== Scores & stats modal ===== */
@@ -115,7 +116,7 @@
 </header>
 <div class="wrap">
     <div class="tools">
-        <span class="muted">Devices check in every ~15s. Changes apply on their next check-in.</span>
+        <span class="muted" id="checkinNote">Devices check in every ~15s. Changes apply on their next check-in.</span>
         <span class="spacer"></span>
         <input class="token" id="token" placeholder="Admin token (if set)" autocomplete="off" autocapitalize="off" autocorrect="off" style="display:none" />
     </div>
@@ -146,6 +147,8 @@ tokenEl.addEventListener("input", function () { try { localStorage.setItem("ba_a
 fetch("/api/config").then(function(r){return r.json();}).then(function(c){
     if (c.authRequired) tokenEl.style.display = "inline-block";
     if (c.local) document.getElementById("localBadge").style.display = "inline-block";
+    serverFast = !!c.fast;
+    if (serverFast) document.getElementById("checkinNote").textContent = "On this WiFi server, changes reach tablets instantly.";
 });
 
 function token(){ return tokenEl.value.trim(); }
@@ -323,7 +326,12 @@ function renderScores(m, d){
 function tile(v,k){ return '<div class="sc-tile"><div class="sv">'+esc(String(v))+'</div><div class="sk">'+esc(k)+'</div></div>'; }
 
 /* ===== Remote control: live view + tap replay ===== */
-var remote = null; // { id, frameTimer, modal }
+var remote = null; // { id, frameTimer, modal, seq, frames }
+/* On the WiFi server (Brain Arcade Server on a computer) the dashboard holds a
+   request open and gets each frame the instant the tablet sends it, and scrolls
+   are sent every ~30ms. On Render it polls once a second, to stay inside the
+   free hours. */
+var serverFast = false;
 function openRemote(id){
     var d=lastDevices.filter(function(x){return x.id===id;})[0];
     var name=d?d.name:"Tablet";
@@ -343,32 +351,70 @@ function openRemote(id){
                 '<span class="spacer"></span>'+
                 '<button class="btn primary" id="rc-close">Close</button>'+
             '</div>'+
-            '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">The tablet starts sharing on its next check-in (up to ~15s). If nothing appears, install the latest APK on the tablet.</span></div></div>'+
+            '<div class="screen-wrap"><div class="waiting" id="rc-wait">Waiting for the tablet’s screen…<br><span class="mini">'+(serverFast?'On the WiFi server it starts in a second or two.':'The tablet starts sharing on its next check-in (up to ~15s).')+' If nothing appears, install the latest APK on the tablet.</span></div></div>'+
             '<div class="rc-controls">'+
                 '<button class="btn" id="rc-up">&#9650; Scroll up</button>'+
                 '<button class="btn" id="rc-down">&#9660; Scroll down</button>'+
             '</div>'+
-            '<div class="mhint">Tap to tap on the tablet, or <b>drag up/down to scroll</b>. Controls the Brain Arcade app only. Streaming stops when you close this.</div>';
+            '<div class="mhint"><span id="rc-speed" class="rc-speed">'+(serverFast?'&#9889; Fast mode (WiFi server)':'&#9729;&#65039; Cloud server: about 1 update a second')+'</span><br>Tap to tap on the tablet, or <b>drag up/down to scroll</b>. Controls the Brain Arcade app only. Streaming stops when you close this.</div>';
         document.body.appendChild(m);
-        remote={ id:id, modal:m, frameTimer:null };
+        remote={ id:id, modal:m, frameTimer:null, seq:0, frames:[] };
         document.getElementById("rc-close").onclick=closeRemote;
         document.getElementById("rc-up").onclick=function(){ sendScroll(-0.55); };
         document.getElementById("rc-down").onclick=function(){ sendScroll(0.55); };
-        pullFrame();
-        remote.frameTimer=setInterval(pullFrame, 1200);
+        if(serverFast) waitFrame(remote);
+        else { pullFrame(); remote.frameTimer=setInterval(pullFrame, 1200); }
     });
 }
+var pendingScroll=0, scrollTimer=null;
 function sendScroll(dyFrac){
     if(!remote) return;
-    fetch("/api/input",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},
-        body:JSON.stringify({deviceId:remote.id,type:"scroll",dyFrac:dyFrac})}).catch(function(){});
+    // Batch the many tiny moves of a drag into one message every ~30ms.
+    pendingScroll+=dyFrac;
+    if(scrollTimer) return;
+    scrollTimer=setTimeout(function(){
+        scrollTimer=null;
+        var d=pendingScroll; pendingScroll=0;
+        if(!remote || Math.abs(d)<0.001) return;
+        fetch("/api/input",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},
+            body:JSON.stringify({deviceId:remote.id,type:"scroll",dyFrac:d})}).catch(function(){});
+    }, serverFast?30:120);
+}
+// Fast mode: wait for the next frame, show it, ask again.
+function waitFrame(r){
+    if(remote!==r) return;
+    fetch("/api/frame/wait?deviceId="+encodeURIComponent(r.id)+"&since="+r.seq+"&timeout=8")
+    .then(function(res){ if(res.status===404) throw new Error("old"); return res.json(); })
+    .then(function(f){
+        if(remote!==r) return;
+        if(f.data && f.seq!==r.seq){ r.seq=f.seq; showFrame(f.data); }
+        waitFrame(r);
+    }).catch(function(e){
+        if(remote!==r) return;
+        if(e&&e.message==="old"){ serverFast=false; pullFrame(); r.frameTimer=setInterval(pullFrame,1200); return; }
+        setTimeout(function(){ waitFrame(r); },500);
+    });
+}
+function showFrame(data){
+    if(!remote) return;
+    var img=ensureScreen();
+    img.src="data:image/jpeg;base64,"+data;
+    if(serverFast){
+        var now=Date.now(); remote.frames.push(now);
+        while(remote.frames.length && now-remote.frames[0]>2000) remote.frames.shift();
+        var sp=document.getElementById("rc-speed");
+        if(sp) sp.innerHTML="&#9889; Fast mode (WiFi server) &middot; "+Math.round(remote.frames.length/2)+" updates/sec";
+    }
 }
 function pullFrame(){
     if(!remote) return;
     fetch("/api/frame?deviceId="+encodeURIComponent(remote.id)).then(function(r){return r.json();}).then(function(f){
-        if(!remote) return;
+        if(!remote || !f.data) return;
+        showFrame(f.data);
+    }).catch(function(){});
+}
+function ensureScreen(){
         var wrap=remote.modal.querySelector(".screen-wrap");
-        if(!f.data){ return; }
         var img=remote.modal.querySelector("img.screen");
         if(!img){
             wrap.innerHTML="";
@@ -412,8 +458,7 @@ function pullFrame(){
                 sendScroll(e.deltaY/rect.height); e.preventDefault();
             },{passive:false});
         }
-        img.src="data:image/jpeg;base64,"+f.data;
-    }).catch(function(){});
+        return img;
 }
 function sendTap(img,cx,cy){
     var rect=img.getBoundingClientRect();

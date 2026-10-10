@@ -98,6 +98,25 @@ inputs = {}     # id -> [ {type, x, y} ]
 scores = {}     # id -> { gameId: best }
 
 
+# ---- instant updates (WiFi only) ----
+# On a home network there is no reason to make a tablet wait for its next
+# check-in. A tablet keeps one request open on /api/events and is answered the
+# moment the dashboard taps, scrolls or sends a command; the dashboard keeps one
+# open on /api/frame/wait and gets each screen frame as soon as it lands. The
+# Render server does not do this (it would burn through the free hours).
+EV = threading.Condition()     # never acquire LOCK while holding EV
+ev_ver = {}                    # device id -> command version
+FR = threading.Condition()
+frame_seq = [0]
+
+
+def notify(did, command=True):
+    with EV:
+        if command:
+            ev_ver[did] = ev_ver.get(did, 0) + 1
+        EV.notify_all()
+
+
 def default_policy():
     return {"locked": False, "allowedGames": None}
 
@@ -425,6 +444,10 @@ class Handler(BaseHTTPRequestHandler):
         p = u.path
         q = parse_qs(u.query)
         try:
+            if p == "/api/events":
+                return self.events(q)
+            if p == "/api/frame/wait":
+                return self.frame_wait(q)
             if p.startswith("/api/"):
                 with LOCK:
                     return self.api(method, p, q)
@@ -444,7 +467,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.client_address[0] not in ("127.0.0.1", "::1"):
                 log_once("ping " + self.client_address[0], 30, "A device at %s reached this server" % self.client_address[0])
             # How tablets recognise a Brain Arcade server when they scan the WiFi.
-            return self.send(200, {"brainArcade": True, "kind": "local", "name": socket.gethostname(), "version": VERSION})
+            return self.send(200, {"brainArcade": True, "kind": "local", "fast": True, "name": socket.gethostname(), "version": VERSION})
 
         if p == "/api/heartbeat" and method == "POST":
             b = self.body()
@@ -564,13 +587,17 @@ class Handler(BaseHTTPRequestHandler):
             elif a == "find":
                 cmd["findOn"] = bool(b.get("on"))
                 cmd["findAt"] = now_ms()
+            notify(did)
             return self.send(200, {"ok": True})
 
         if p == "/api/frame" and method == "POST":
             b = self.body()
             if not b.get("deviceId") or not b.get("data"):
                 return self.send(400, {"error": "deviceId and data required"})
-            frames[b["deviceId"]] = {"data": str(b["data"]), "ts": now_ms()}
+            with FR:
+                frame_seq[0] += 1
+                frames[b["deviceId"]] = {"data": str(b["data"]), "ts": now_ms(), "seq": frame_seq[0]}
+                FR.notify_all()
             return self.send(200, {"ok": True})
 
         if p == "/api/frame" and method == "GET":
@@ -593,7 +620,8 @@ class Handler(BaseHTTPRequestHandler):
                 qq.append({"type": "scroll", "dyFrac": b["dyFrac"]})
             elif isinstance(b.get("x"), num) and isinstance(b.get("y"), num):
                 qq.append({"type": "tap", "x": b["x"], "y": b["y"]})
-            del qq[:-30]
+            del qq[:-60]
+            notify(did, command=False)
             return self.send(200, {"ok": True})
 
         if p == "/api/device/remove" and method == "POST":
@@ -618,10 +646,11 @@ class Handler(BaseHTTPRequestHandler):
             policies[did] = {"locked": bool(b.get("locked")),
                              "allowedGames": b["allowedGames"] if isinstance(b.get("allowedGames"), list) else None}
             save_data_soon()
+            notify(did)
             return self.send(200, {"ok": True, "policy": policies[did]})
 
         if p == "/api/config" and method == "GET":
-            return self.send(200, {"authRequired": bool(ADMIN_TOKEN), "local": True})
+            return self.send(200, {"authRequired": bool(ADMIN_TOKEN), "local": True, "fast": True})
 
         # ---------------- multiplayer ----------------
         if p == "/api/mp/sync" and method == "POST":
@@ -786,6 +815,63 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
 
         return self.send(404, {"error": "not found"})
+
+    # ------------------------------------------------------- long-polls
+    def events(self, q):
+        """Held open until the dashboard has something for this tablet."""
+        did = (q.get("deviceId") or [""])[0]
+        if not did:
+            return self.send(400, {"error": "deviceId required"})
+        try:
+            since = int((q.get("since") or ["-1"])[0])
+        except ValueError:
+            since = -1
+        try:
+            wait = max(0.0, min(25.0, float((q.get("timeout") or ["20"])[0])))
+        except ValueError:
+            wait = 20.0
+        deadline = time.time() + wait
+        with EV:
+            while True:
+                v = ev_ver.get(did, 0)
+                if v != since or inputs.get(did):
+                    break
+                left = deadline - time.time()
+                if left <= 0:
+                    break
+                EV.wait(left)
+        with LOCK:
+            taps = inputs.get(did) or []
+            inputs[did] = []
+        return self.send(200, {"v": ev_ver.get(did, 0), "input": taps})
+
+    def frame_wait(self, q):
+        """Answers as soon as a newer screen frame than `since` arrives."""
+        did = (q.get("deviceId") or [""])[0]
+        try:
+            since = int((q.get("since") or ["0"])[0])
+        except ValueError:
+            since = 0
+        try:
+            wait = max(0.0, min(10.0, float((q.get("timeout") or ["8"])[0])))
+        except ValueError:
+            wait = 8.0
+        deadline = time.time() + wait
+        with FR:
+            while True:
+                fr = frames.get(did)
+                if fr and fr.get("seq", 0) > since:
+                    break
+                left = deadline - time.time()
+                if left <= 0:
+                    break
+                FR.wait(left)
+        fr = frames.get(did)
+        if not fr:
+            return self.send(200, {"data": None, "seq": since})
+        if fr.get("seq", 0) <= since:
+            return self.send(200, {"data": None, "seq": fr.get("seq", 0)})
+        return self.send(200, {"data": fr["data"], "ts": fr["ts"], "seq": fr.get("seq", 0)})
 
     # ------------------------------------------------------------- static
     def file(self, root, rel):

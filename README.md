@@ -94,6 +94,38 @@ puzzle uses S, so it never turns into a plurals hunt. Progress on each hive is k
 **Pipe Flow** boards are built from a random spanning tree rooted at the tap and then
 scrambled, so every board has a solution that uses every pipe with no leaks.
 
+## ⚡ Instant remote control on the WiFi server
+When a tablet is on **Brain Arcade Server** (your own computer), remote control runs at
+full speed: the screen streams at well over 10 updates a second, and taps, scrolls,
+messages, locks and every other dashboard command reach the tablet the moment you click
+(the tablet keeps one request open on `/api/events`; the dashboard keeps one open on
+`/api/frame/wait`). In testing: remote view starts in ~0.15s, a scroll shows up in
+~0.2s, a message pops up in ~0.1s.
+
+On the **Render** server nothing changes on purpose — about one screen update a second
+and commands on the next check-in — so the free hours are not burned through. The
+remote-control window says which mode it is in.
+
+## ⏳ Unlocking more play time
+When the daily limit is reached the *Time's up* screen has an **🔓 Unlock** button. It
+asks for the unlock PIN **1234** (the Settings PIN 2580 does not work here), then offers
+**+15 min, +30 min, +1 hour** or **No limit today**. Extra time only lasts for the day.
+
+## 💤 Screensaver and sleep
+Kiosk mode keeps the screen on, so a forgotten tablet used to glow all night. Now, after
+a few minutes with nobody touching it (**Settings → Screensaver**: off / 2 / 5 / 10 /
+30 min, default 10), a dim, slowly drifting clock screensaver appears and the backlight
+goes down. Three minutes later the tablet goes to **sleep**:
+
+- With **Settings → Turn the screen fully off → Allow** (Android's device-admin "lock
+  the screen" permission) the screen switches off straight away.
+- Without it, the app stops holding the screen awake and leaves it dimmed, so Android's
+  own screen timeout turns it off.
+
+A touch wakes it (that touch never presses anything underneath). A game that was open is
+saved and waits under *Carry on*. The screensaver never starts while the tablet is being
+remote-controlled or is ringing.
+
 ## 👥 2-player mode
 Every game that has a computer opponent can also be played by **two people on one
 tablet** — pick **👥 2 Players** under Easy / Medium / Hard.
