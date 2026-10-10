@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.20.0";
+    var VERSION = "1.21.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1163,9 +1163,42 @@
         if (liveDef && liveDef.id === id) { liveState = null; clearTimeout(saveTimer); saveTimer = null; }
     }
 
+    // A yes/no confirm, so an accidental tap cannot wipe a game in progress.
+    function confirmAction(opts, onYes) {
+        var ov = el("div", { class: "overlay over-lock" });
+        var panel = el("div", { class: "panel pop" }, [
+            el("div", { class: "big", html: opts.emoji || "&#10067;" }),
+            el("h2", { text: opts.title || "Start over?" }),
+            el("p", { html: opts.sub || "This will clear what you have now." }),
+            el("div", { class: "btn-row" }, [
+                el("button", { class: "btn", text: opts.no || "Keep playing", onclick: function () { close(); } }),
+                el("button", { class: "btn primary", text: opts.yes || "Start over", onclick: function () { close(); onYes(); } })
+            ])
+        ]);
+        ov.appendChild(panel); document.body.appendChild(ov);
+        function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+        return ov;
+    }
+    // Buttons that throw away the current game get a confirm first (easy to tap by
+    // accident). Covers every game at once, without editing each one. A win/lose
+    // overlay's "Play again" is deliberate, so it is not wrapped (those are .btn in
+    // an .overlay, created by overlay(), not here).
+    var RESET_LABELS = { "New game": 1, "New round": 1, "Restart": 1, "New deal": 1, "New board": 1, "New puzzle": 1, "Start over": 1 };
+    function gameEl(tag, attrs, children) {
+        if (tag === "button" && attrs && typeof attrs.onclick === "function" && RESET_LABELS[attrs.text]) {
+            var orig = attrs.onclick, label = attrs.text;
+            attrs = Object.assign({}, attrs, { onclick: function (ev) {
+                var self = this;
+                confirmAction({ title: label + "?", sub: "This starts a fresh game and clears the one you are on.", yes: label, no: "Keep playing" },
+                    function () { orig.call(self, ev); });
+            } });
+        }
+        return el(tag, attrs, children);
+    }
+
     function makeApi(def, difficulty, resumeState) {
         return {
-            el: el, sound: Sound, haptic: haptic, toast: toast, overlay: overlay,
+            el: gameEl, sound: Sound, haptic: haptic, toast: toast, overlay: overlay, confirm: confirmAction,
             space: space, isTablet: isTablet,
             difficulty: difficulty || "medium",
             // "2p" is chosen like a difficulty (so it survives Continue), but means
@@ -1317,6 +1350,18 @@
         });
         if (changed && route === "home") renderHome();
     }
+    /** What the tablet is doing right now, for the dashboard. */
+    function currentActivity() {
+        if (saver) return { where: "screensaver", label: "Screensaver" };
+        if (effLocked && effLocked()) return { where: "locked", label: "Locked" };
+        if (route === "game" && routeArg) {
+            var two = current && current.difficulty === "2p" && routeArg.twoPlayer;
+            return { where: "game", id: routeArg.id, label: routeArg.name + (two ? " (2 players)" : ""), icon: routeArg.icon || "" };
+        }
+        if (route === "settings") return { where: "settings", label: "In Settings" };
+        if (route === "stats") return { where: "stats", label: "Looking at stats" };
+        return { where: "home", label: "Home screen" };
+    }
     function poll() {
         pollCount++;
         if (!lanOn()) usingLocal = false;
@@ -1334,6 +1379,8 @@
                 streak: daily.streak || 0, achievements: unlocked().length, achievementsTotal: ACHIEVEMENTS.length,
                 todayMs: (screenTime.day === todayKey() ? screenTime.ms : 0), limitMin: limitMin()
             },
+            playing: currentActivity(),
+            canCamera: cameraCapable(),
             platform: platformLabel(),
             canFind: canFindNative(),
             canStream: canCapture(),   // true only in the installed app (needs native screen capture)
@@ -1436,11 +1483,77 @@
             if (data.find.on && !findingNow) startFind();
             else if (!data.find.on && findingNow) stopFind(true);
         }
+        // Dashboard asked for a camera photo to locate the tablet.
+        if (data.photo && data.photo.ts && data.photo.ts !== lastPhotoReq) {
+            lastPhotoReq = data.photo.ts;
+            takeLocatePhoto(data.photo.facing === "user" ? "user" : "environment");
+        }
         // On-demand screen streaming (only while the dashboard asks for it).
         if (data.stream) startStream(); else stopStream();
         // Replay any remote taps queued by the dashboard.
         if (Array.isArray(data.input) && data.input.length) data.input.forEach(applyRemoteInput);
         if (changed) refreshPolicyUI();
+    }
+
+    /* ============================================================
+       Camera photo — the dashboard can ask the tablet to send a photo (front or
+       back camera) so a parent can see where it is. Capture is plain getUserMedia
+       into a canvas; the native app only grants the WebView camera access and
+       holds the runtime permission. A browser can do it too (it just prompts).
+       ============================================================ */
+    var lastPhotoReq = 0, photoBusy = false;
+    function cameraCapable() {
+        try {
+            if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return false;
+            if (window.AndroidBridge && typeof window.AndroidBridge.cameraAvailable === "function")
+                return bridgeCall("cameraAvailable", false) === true;
+            return true;
+        } catch (e) { return false; }
+    }
+    function takeLocatePhoto(facing) {
+        if (photoBusy || !cameraCapable()) return;
+        // In the app, make sure the runtime camera permission has been granted.
+        if (window.AndroidBridge && typeof window.AndroidBridge.hasCameraPermission === "function"
+            && bridgeCall("hasCameraPermission", false) !== true) {
+            bridgeCall("requestCameraPermission", null);
+            return; // the next request (after the parent allows it) will succeed
+        }
+        photoBusy = true;
+        var stream = null, video = null, done = false;
+        function cleanup() {
+            try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+            if (video && video.parentNode) video.parentNode.removeChild(video);
+            photoBusy = false;
+        }
+        var guard = setTimeout(function () { if (!done) { done = true; cleanup(); } }, 9000);
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing } }, audio: false })
+            .then(function (s) {
+                stream = s;
+                video = el("video", { autoplay: "", playsinline: "", muted: "", style: "position:fixed;left:-9999px;width:2px;height:2px;opacity:0" });
+                video.muted = true; video.srcObject = s; document.body.appendChild(video);
+                return video.play().then(function () { return new Promise(function (r) { setTimeout(r, 450); }); });
+            })
+            .then(function () {
+                if (done) return; done = true; clearTimeout(guard);
+                var w = video.videoWidth || 640, h = video.videoHeight || 480;
+                var maxW = 720, sc = w > maxW ? maxW / w : 1;
+                var cv = el("canvas", { width: Math.round(w * sc), height: Math.round(h * sc) });
+                var ctx = cv.getContext("2d");
+                // Front camera: mirror it, the way a selfie looks.
+                if (facing === "user") { ctx.translate(cv.width, 0); ctx.scale(-1, 1); }
+                ctx.drawImage(video, 0, 0, cv.width, cv.height);
+                var dataUrl = cv.toDataURL("image/jpeg", 0.6);
+                var b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+                var url = serverUrl();
+                if (b64 && url) {
+                    fetch(url + "/api/photo", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ deviceId: deviceId, data: b64, facing: facing })
+                    }).catch(function () {});
+                }
+                cleanup();
+            })
+            .catch(function () { if (!done) { done = true; clearTimeout(guard); } cleanup(); });
     }
 
     /* ============================================================

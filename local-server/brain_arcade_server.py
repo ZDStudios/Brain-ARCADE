@@ -96,6 +96,7 @@ commands = {}   # id -> { appUpdateAt, popupText, popupAt, stream, ... }
 frames = {}     # id -> { data, ts }
 inputs = {}     # id -> [ {type, x, y} ]
 scores = {}     # id -> { gameId: best }
+photos = {}     # id -> { data, ts, facing }  (latest "where is it?" camera photo)
 
 
 # ---- instant updates (WiFi only) ----
@@ -489,6 +490,8 @@ class Handler(BaseHTTPRequestHandler):
                 "canKiosk": bool(b.get("canKiosk")), "kiosk": bool(b.get("kiosk")), "tv": bool(b.get("tv")),
                 "stats": b["stats"] if isinstance(b.get("stats"), dict) else prev.get("stats"),
                 "summary": b["summary"] if isinstance(b.get("summary"), dict) else prev.get("summary"),
+                "playing": b["playing"] if isinstance(b.get("playing"), dict) else prev.get("playing"),
+                "canCamera": bool(prev.get("canCamera")) if b.get("canCamera") is None else bool(b.get("canCamera")),
             }
             pol = policies.get(did) or default_policy()
             cmd = commands.setdefault(did, {})
@@ -512,6 +515,7 @@ class Handler(BaseHTTPRequestHandler):
                 "kiosk": {"on": bool(cmd.get("kioskOn")), "ts": cmd["kioskAt"]} if cmd.get("kioskAt") else None,
                 "leave": cmd.get("leaveAt"),
                 "find": {"on": bool(cmd.get("findOn")), "ts": cmd.get("findAt") or 0},
+                "photo": ({"facing": cmd.get("photoFacing") or "environment", "ts": cmd["photoAt"]} if cmd.get("photoAt") else None),
                 "stream": bool(cmd.get("stream")),
                 "input": taps,
                 "scoresBackup": scores.get(did),
@@ -554,6 +558,9 @@ class Handler(BaseHTTPRequestHandler):
                     "canStream": bool(d.get("canStream")), "canKiosk": bool(d.get("canKiosk")),
                     "kiosk": bool(d.get("kiosk")), "tv": bool(d.get("tv")), "canFind": bool(d.get("canFind")),
                     "finding": bool(cmd.get("findOn")), "streaming": bool(cmd.get("stream")),
+                    "playing": d.get("playing"), "canCamera": bool(d.get("canCamera")),
+                    "hasPhoto": bool(photos.get(did) and (t - photos[did]["ts"]) < 10 * 60000),
+                    "photoTs": photos[did]["ts"] if photos.get(did) else 0,
                     "hasFrame": bool(fr and (t - fr["ts"]) < 15000),
                     "lastSeen": d["lastSeen"], "online": (t - d["lastSeen"]) < ONLINE_MS,
                     "policy": policies.get(did) or default_policy(),
@@ -587,6 +594,10 @@ class Handler(BaseHTTPRequestHandler):
             elif a == "find":
                 cmd["findOn"] = bool(b.get("on"))
                 cmd["findAt"] = now_ms()
+            elif a == "photo":
+                cmd["photoFacing"] = "user" if b.get("facing") == "user" else "environment"
+                cmd["photoAt"] = now_ms()
+                notify(did)
             notify(did)
             return self.send(200, {"ok": True})
 
@@ -606,6 +617,23 @@ class Handler(BaseHTTPRequestHandler):
             if not fr:
                 return self.send(200, {"data": None})
             return self.send(200, {"data": fr["data"], "ts": fr["ts"]})
+
+        if p == "/api/photo" and method == "POST":
+            b = self.body()
+            if not b.get("deviceId") or not b.get("data"):
+                return self.send(400, {"error": "deviceId and data required"})
+            photos[b["deviceId"]] = {"data": str(b["data"]), "ts": now_ms(),
+                                     "facing": "user" if b.get("facing") == "user" else "environment"}
+            cmd = commands.setdefault(b["deviceId"], {})
+            cmd["photoAt"] = 0
+            return self.send(200, {"ok": True})
+
+        if p == "/api/photo" and method == "GET":
+            did = (q.get("deviceId") or [None])[0]
+            ph = photos.get(did) if did else None
+            if not ph:
+                return self.send(200, {"data": None})
+            return self.send(200, {"data": ph["data"], "ts": ph["ts"], "facing": ph["facing"]})
 
         if p == "/api/input" and method == "POST":
             if not self.authed():
@@ -631,7 +659,7 @@ class Handler(BaseHTTPRequestHandler):
             did = b.get("deviceId")
             if not did:
                 return self.send(400, {"error": "deviceId required"})
-            for store in (devices, policies, commands, frames, inputs, scores):
+            for store in (devices, policies, commands, frames, inputs, scores, photos):
                 store.pop(did, None)
             save_data_soon()
             return self.send(200, {"ok": True})

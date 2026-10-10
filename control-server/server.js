@@ -22,6 +22,7 @@ const commands = Object.create(null); // id -> { appUpdateAt, popupText, popupAt
 const frames = Object.create(null);   // id -> { data, ts }  (latest screen image, on-demand)
 const inputs = Object.create(null);   // id -> [ { x, y } ]  (queued remote taps)
 const scores = Object.create(null);   // id -> { gameId: bestValue }  (backup across reinstalls)
+const photos = Object.create(null);   // id -> { data, ts, facing }  (latest "where is it?" camera photo)
 
 function defaultPolicy() { return { locked: false, allowedGames: null }; }
 
@@ -297,7 +298,9 @@ const server = http.createServer(async function (req, res) {
             battery: bat, games: games, canStream: !!b.canStream,
             canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv,
             stats: (b.stats && typeof b.stats === "object") ? b.stats : (prev.stats || null),
-            summary: (b.summary && typeof b.summary === "object") ? b.summary : (prev.summary || null)
+            summary: (b.summary && typeof b.summary === "object") ? b.summary : (prev.summary || null),
+            playing: (b.playing && typeof b.playing === "object") ? b.playing : (prev.playing || null),
+            canCamera: b.canCamera === undefined ? !!prev.canCamera : !!b.canCamera
         };
         const pol = policies[b.deviceId] || defaultPolicy();
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
@@ -328,6 +331,7 @@ const server = http.createServer(async function (req, res) {
             // changing the kiosk setting.
             leave: cmd.leaveAt || null,
             find: { on: !!cmd.findOn, ts: cmd.findAt || 0 },
+            photo: cmd.photoAt ? { facing: cmd.photoFacing || "environment", ts: cmd.photoAt } : null,
             stream: !!cmd.stream,
             input: taps,
             scoresBackup: scores[b.deviceId] || null
@@ -382,6 +386,10 @@ const server = http.createServer(async function (req, res) {
                 canFind: !!d.canFind,
                 finding: !!cmd.findOn,
                 streaming: !!cmd.stream,
+                playing: d.playing || null,
+                canCamera: !!d.canCamera,
+                hasPhoto: !!(photos[id] && (now - photos[id].ts) < 10 * 60000),
+                photoTs: photos[id] ? photos[id].ts : 0,
                 hasFrame: !!(fr && (now - fr.ts) < 15000),
                 lastSeen: d.lastSeen, online: (now - d.lastSeen) < ONLINE_MS,
                 policy: policies[id] || defaultPolicy()
@@ -403,6 +411,7 @@ const server = http.createServer(async function (req, res) {
         // "Where is it?" — ring the device until somebody stops it, on the device
         // or from here.
         else if (b.action === "find") { cmd.findOn = !!b.on; cmd.findAt = Date.now(); }
+        else if (b.action === "photo") { cmd.photoFacing = b.facing === "user" ? "user" : "environment"; cmd.photoAt = Date.now(); }
         return send(res, 200, { ok: true });
     }
 
@@ -420,6 +429,23 @@ const server = http.createServer(async function (req, res) {
         const fr = id && frames[id];
         if (!fr) return send(res, 200, { data: null });
         return send(res, 200, { data: fr.data, ts: fr.ts });
+    }
+
+    // Tablet uploads a camera photo (after the dashboard asked for one).
+    if (p === "/api/photo" && req.method === "POST") {
+        const b = await readBody(req);
+        if (!b.deviceId || !b.data) return send(res, 400, { error: "deviceId and data required" });
+        photos[b.deviceId] = { data: String(b.data), ts: Date.now(), facing: b.facing === "user" ? "user" : "environment" };
+        const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
+        cmd.photoAt = 0;   // request fulfilled
+        return send(res, 200, { ok: true });
+    }
+    // Dashboard fetches the latest camera photo.
+    if (p === "/api/photo" && req.method === "GET") {
+        const id = u.searchParams.get("deviceId");
+        const ph = id && photos[id];
+        if (!ph) return send(res, 200, { data: null });
+        return send(res, 200, { data: ph.data, ts: ph.ts, facing: ph.facing });
     }
 
     // Dashboard queues remote input: a tap (normalized 0..1 coords) or a scroll
@@ -443,7 +469,7 @@ const server = http.createServer(async function (req, res) {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         delete devices[b.deviceId]; delete policies[b.deviceId]; delete commands[b.deviceId];
-        delete frames[b.deviceId]; delete inputs[b.deviceId]; delete scores[b.deviceId];
+        delete frames[b.deviceId]; delete inputs[b.deviceId]; delete scores[b.deviceId]; delete photos[b.deviceId];
         return send(res, 200, { ok: true });
     }
 

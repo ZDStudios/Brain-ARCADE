@@ -249,7 +249,15 @@
                     paint();
                     return;
                 }
-                if (p && sel == null) { say((TWO ? "That is " + sideName(!white) + "'s piece. " : "That is the computer's piece. ") + "It is " + (TWO ? sideName(white) + "'s" : "your") + " turn."); return; }
+                if (p) {
+                    // Tapping any other piece just names it (handy for learning), and
+                    // clears a selection so the board is not left mid-move.
+                    var ownerTxt = TWO ? sideName(!white) + "'s" : "the computer's";
+                    sel = null; api.sound.tick();
+                    say("<span class='piece-tag'>" + GLYPH[p] + " " + (isW(p) ? "White " : "Black ") + NAMES[p.toUpperCase()] + "</span> That is " + ownerTxt + " piece. It is " + (TWO ? sideName(white) + "'s" : "your") + " turn.");
+                    paint();
+                    return;
+                }
                 sel = null; prompt(); paint();
             }
             function explainStuck(i, white) {

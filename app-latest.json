@@ -2,5 +2,5 @@
   "versionCode": 29,
   "versionName": "1.20.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Instant remote control on your WiFi server, a grown-up Unlock button on the Time's up screen, a screensaver that puts the tablet to sleep when nobody is using it, and smoother animations."
+  "notes": "The dashboard now shows what each tablet is playing and has a 'Where is it?' camera photo (front or back). In Chess tap any piece to see what it is, and every New game button now asks before it wipes your game."
 }

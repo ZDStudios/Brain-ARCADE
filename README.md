@@ -152,6 +152,15 @@ Hard computers (the Tic-Tac-Toe computer used to be unbeatable).
   *perft* counts exactly (start position, Kiwipete and position 3), and the computer
   thinks in well under a second.
 
+## ♻️ No more accidental restarts
+Every **New game / New round / Restart** button now asks “Start over?” first, so a
+stray tap can no longer wipe a game you are in the middle of. **Keep playing** leaves it
+exactly as it was.
+
+In **Chess**, tapping *any* square now tells you what is on it — your pieces, the
+other side's pieces, even naming the colour (“♞ Black Knight”) — so it doubles as a
+way to learn the pieces, not just a move picker.
+
 ## 🔨 Whack-a-Mole
 Rebuilt from scratch: a big grassy board that fills the screen, moles drawn in CSS that
 really rise out of their holes (and go cross-eyed when bopped), **golden moles** worth 3,
@@ -304,6 +313,22 @@ visible selection ring, OK/Enter selects, Back goes back. Arrow keys still belon
 the games while you're playing. TV layout (bigger type, 4–5 column grid,
 overscan-safe margins) turns on automatically and can be forced in
 **Settings → Appearance → TV mode**.
+
+## 👀 See what they're playing
+Each device card shows what the tablet is doing **right now** — the game it is in
+(“♟ Chess — playing now”), or Home screen / Settings / Screensaver / Locked — so you
+can tell at a glance whether a tablet is being used and for what.
+
+## 📷 Where is it? (camera photo)
+Lost the tablet, or want to check what it is pointed at? **📷 Where is it?** on the
+dashboard asks the tablet to take a photo and send it back, so you can see the room it
+is in. Pick the **back** or **front** camera. The very first time, the tablet shows a
+one-off Android camera-permission prompt to allow; after that it just works. Photos are
+kept only in memory on the server and are never written to disk.
+
+This needs the latest app on the tablet (for camera access); the button is greyed out
+on a device that cannot do it, and on the WiFi server the photo arrives in about a
+second.
 
 ## 🎮 Control dashboard
 Live at <https://brain-arcade-control.onrender.com> (deploy your own from

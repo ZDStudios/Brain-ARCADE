@@ -30,7 +30,11 @@ import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -56,7 +60,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.20.0";
+    private static final String BUNDLED_VERSION = "1.21.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -111,6 +115,25 @@ public class MainActivity extends Activity {
                 }
             }
         });
+        // Let the page's getUserMedia() use the camera (the "send a photo to locate
+        // the tablet" feature). We only ever grant the camera, nothing else, and only
+        // once the app itself holds the runtime CAMERA permission.
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(new Runnable() { public void run() {
+                    boolean wantsCamera = false;
+                    for (String r : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) wantsCamera = true;
+                    }
+                    if (wantsCamera && hasCameraPermissionInternal()) {
+                        request.grant(new String[]{ PermissionRequest.RESOURCE_VIDEO_CAPTURE });
+                    } else {
+                        request.deny();
+                    }
+                } });
+            }
+        });
         webView.setBackgroundColor(0xFF0B1020);
         webView.addJavascriptInterface(new NativeBridge(), "AndroidBridge");
 
@@ -131,6 +154,11 @@ public class MainActivity extends Activity {
        applyKiosk() for why.                                                        */
 
     private boolean isKioskEnabled() { return prefs.getBoolean(PREF_KIOSK, false); }
+
+    private boolean hasCameraPermissionInternal() {
+        try { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
+        catch (Exception e) { return false; }
+    }
 
     private boolean isDeviceOwnerInternal() {
         try { return dpm != null && dpm.isDeviceOwnerApp(getPackageName()); } catch (Exception e) { return false; }
@@ -743,6 +771,29 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean isOnline() { return isOnlineInternal(); }
+
+        /* ---------- camera (remote "where is it?" photo) ---------- */
+
+        /** True once the user has granted the app the CAMERA permission. */
+        @JavascriptInterface
+        public boolean hasCameraPermission() { return hasCameraPermissionInternal(); }
+
+        /** True if the device has any camera at all. */
+        @JavascriptInterface
+        public boolean cameraAvailable() {
+            try { return getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY); }
+            catch (Exception e) { return false; }
+        }
+
+        /** Pop Android's camera-permission prompt (once). getUserMedia works after it is allowed. */
+        @JavascriptInterface
+        public void requestCameraPermission() {
+            runOnUiThread(new Runnable() { public void run() {
+                try {
+                    if (!hasCameraPermissionInternal()) requestPermissions(new String[]{ Manifest.permission.CAMERA }, 7021);
+                } catch (Exception ignored) {}
+            } });
+        }
 
         /* ---------- screensaver / sleep ----------
            The web layer notices nobody has touched the tablet for a while and shows a
