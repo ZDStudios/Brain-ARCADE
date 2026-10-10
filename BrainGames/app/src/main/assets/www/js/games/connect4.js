@@ -3,18 +3,21 @@
     window.BrainGames.register({
         id: "c4", name: "Connect Four", icon: "&#128309;",
         gradient: "linear-gradient(135deg,#DC2626,#F59E0B)",
-        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
+        best: "high", bestLabel: "Wins", difficulties: true, twoPlayer: true, resumable: true,
         help: {"emoji":"&#128309;","goal":"Connect four of your discs in a line.","steps":["You are the red discs.","Tap a column to drop your disc to the bottom.","Line up four across, up, or diagonally.","Stop the computer's yellow discs from doing it first!"]},
         mount: function (host, api) {
-            var COLS = 7, ROWS = 6, board, lock, wins = api.load("wins", 0);
+            var TWO = api.twoPlayer;
+            var COLS = 7, ROWS = 6, board, lock, wins = api.load("wins", 0), turn = 1, tally = [0, 0, 0];
 
-            var sScore = stat("Wins", wins + ""), sBest = stat("Best", (api.getBest() || 0) + "");
-            host.appendChild(api.el("div", { class: "game-topline" }, [sScore.box, sBest.box]));
+            var sScore = stat(TWO ? "Red" : "Wins", TWO ? "0" : wins + ""), sBest = stat(TWO ? "Yellow" : "Best", TWO ? "0" : (api.getBest() || 0) + "");
+            var sTurn = stat("Turn", "Red");
+            host.appendChild(api.el("div", { class: "game-topline" }, TWO ? [sScore.box, sTurn.box, sBest.box] : [sScore.box, sBest.box]));
             var sp = api.space();
-            var cellPx = Math.floor(Math.min(sp.w / COLS, sp.h / ROWS, 54));
+            var cellPx = Math.floor(Math.min((sp.w - 40) / COLS, (sp.h - 30) / ROWS, sp.isTablet ? 76 : 54));
             var boardEl = api.el("div", { style: "display:grid;grid-template-columns:repeat(" + COLS + ",1fr);gap:5px;background:#1E3A8A;padding:8px;border-radius:12px" });
             host.appendChild(api.el("div", { class: "board-wrap" }, boardEl));
-            host.appendChild(api.el("div", { class: "small-note", text: "You are red. Drop into a column to connect four." }));
+            var note = api.el("div", { class: "small-note", text: TWO ? "Red goes first. Take turns dropping discs!" : "You are red. Drop into a column to connect four." });
+            host.appendChild(note);
             host.appendChild(api.el("div", { class: "btn-row" }, [ api.el("button", { class: "btn", text: "New round", onclick: reset }) ]));
 
             function stat(k, v) { var val = api.el("div", { class: "v", text: v }); return { box: api.el("div", { class: "stat" }, [api.el("div", { class: "k", text: k }), val]), val: val }; }
@@ -36,14 +39,23 @@
                 if (!board) return;
                 // Nothing to come back to on an empty board.
                 if (board.every(function (v) { return !v; })) { api.clearState(); return; }
-                api.saveState({ board: board.slice() });
+                api.saveState({ board: board.slice(), turn: turn });
             }
             function paint(hl) {
                 for (var i = 0; i < ROWS * COLS; i++) { cellEls[i].style.cssText = discStyle(board[i]); if (hl && hl.indexOf(i) > -1) cellEls[i].style.boxShadow = "0 0 0 3px #34D399, 0 0 18px #34D399"; }
                 if (!hl) saveNow();          // a highlight means the game just ended
             }
             function dropRow(bb, c) { for (var r = ROWS - 1; r >= 0; r--) if (!bb[r * COLS + c]) return r; return -1; }
+            function showTurn() { sTurn.val.textContent = turn === 1 ? "Red" : "Yellow"; sTurn.val.style.color = turn === 1 ? "#F87171" : "#FBBF24"; note.textContent = (turn === 1 ? "Red" : "Yellow") + "'s turn"; }
             function drop(c) {
+                if (TWO) {
+                    if (lock) return; var rr = dropRow(board, c); if (rr < 0) return;
+                    board[rr * COLS + c] = turn; api.sound.click(); api.haptic(8);
+                    var wl = winLine(board, turn); if (wl) { paint(); return end(turn, wl); }
+                    if (full(board)) { paint(); return end(0); }
+                    turn = turn === 1 ? 2 : 1; showTurn(); paint();
+                    return;
+                }
                 if (lock) return; var r = dropRow(board, c); if (r < 0) return;
                 board[r * COLS + c] = 1; api.sound.click(); api.haptic(8); paint();
                 var w = winLine(board, 1); if (w) return end(1, w);
@@ -94,6 +106,13 @@
             function end(p, line) {
                 lock = true; paint(line);
                 api.clearState();
+                if (TWO) {
+                    if (p) { tally[p]++; sScore.val.textContent = tally[1]; sBest.val.textContent = tally[2]; api.sound.win(); api.haptic(30); } else api.sound.pop();
+                    api.overlay({ emoji: p ? "&#127881;" : "&#129309;", title: p === 1 ? "Red wins!" : p === 2 ? "Yellow wins!" : "Draw",
+                        sub: p ? "Four in a row! Red " + tally[1] + " &ndash; " + tally[2] + " Yellow" : "Board's full!",
+                        buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] });
+                    return;
+                }
                 if (p === 1) { wins++; api.save("wins", wins); sScore.val.textContent = wins; api.setBest(wins); sBest.val.textContent = api.getBest(); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127881;", title: "You win!", sub: "Four in a row!", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else if (p === 2) { api.sound.lose();
@@ -102,10 +121,10 @@
             }
             function reset(rs) {
                 if (rs && rs.board && rs.board.length === ROWS * COLS) {
-                    board = rs.board.slice(); lock = false; build(); paint();
+                    board = rs.board.slice(); lock = false; turn = TWO && rs.turn ? rs.turn : 1; build(); paint(); if (TWO) showTurn();
                     return;
                 }
-                board = new Array(ROWS * COLS).fill(0); lock = false; build(); paint(); api.clearState();
+                board = new Array(ROWS * COLS).fill(0); lock = false; turn = 1; build(); paint(); api.clearState(); if (TWO) showTurn();
             }
             reset(api.resumeState);
             return function () {};

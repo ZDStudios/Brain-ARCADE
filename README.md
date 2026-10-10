@@ -94,6 +94,32 @@ puzzle uses S, so it never turns into a plurals hunt. Progress on each hive is k
 **Pipe Flow** boards are built from a random spanning tree rooted at the tap and then
 scrambled, so every board has a solution that uses every pipe with no leaks.
 
+## 👥 2-player mode
+Every game that has a computer opponent can also be played by **two people on one
+tablet** — pick **👥 2 Players** under Easy / Medium / Hard.
+
+| Game | How 2 players works |
+| --- | --- |
+| Chess, Reversi, Connect Four, Tic-Tac-Toe | Take turns; the screen says whose turn it is and who won |
+| Air Hockey, Pong | One player at each end of the screen, **both dragging at the same time** — every finger is tracked on its own |
+
+A 2-player game saves and continues like any other, and does not count towards your
+"Wins" record against the computer. Tic-Tac-Toe and Pong also gained Easy / Medium /
+Hard computers (the Tic-Tac-Toe computer used to be unbeatable).
+
+## ♟️ Chess
+- **Show moves** (on by default): every piece that can move glows green; tap one and
+  its moves appear as dots, captures as red rings.
+- **The last move** the other side made is shown in yellow, with a line like
+  *"The computer moved ♞ Knight g8 → f6, taking your ♙ Pawn"*.
+- **Check** turns the king's square red, and only the pieces that can save it glow —
+  this was the "it only lets me move some pieces" confusion. Tapping a piece that
+  cannot move now says why (it can't save the king, it is pinned, or it is blocked).
+- Fixed: castling through an attacked square was allowed, and a game saved during the
+  computer's turn came back frozen. The move generator now matches the standard
+  *perft* counts exactly (start position, Kiwipete and position 3), and the computer
+  thinks in well under a second.
+
 ## 🔨 Whack-a-Mole
 Rebuilt from scratch: a big grassy board that fills the screen, moles drawn in CSS that
 really rise out of their holes (and go cross-eyed when bopped), **golden moles** worth 3,

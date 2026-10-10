@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.17.0";
+    var VERSION = "1.18.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1057,6 +1057,9 @@
             el: el, sound: Sound, haptic: haptic, toast: toast, overlay: overlay,
             space: space, isTablet: isTablet,
             difficulty: difficulty || "medium",
+            // "2p" is chosen like a difficulty (so it survives Continue), but means
+            // two people on this one device instead of the computer.
+            twoPlayer: difficulty === "2p" && !!def.twoPlayer,
             resumeState: resumeState || null,
             saveState: function (s) { liveState = s; liveDef = def; queueResume(); },
             clearState: function () { liveState = null; liveDef = null; dropResume(def.id); },
@@ -1674,7 +1677,7 @@
             el("div", { class: "chooser-ico", html: def.icon || "&#127918;" }),
             el("h2", { text: "Welcome back!" }),
             el("p", { class: "small-note", html: "You have a <b>" + esc(def.name) + "</b> game in progress" +
-                (saved.difficulty && def.difficulties ? " on <b>" + esc(saved.difficulty) + "</b>" : "") +
+                (saved.difficulty === "2p" && def.twoPlayer ? " for <b>2 players</b>" : saved.difficulty && def.difficulties ? " on <b>" + esc(saved.difficulty) + "</b>" : "") +
                 ".<br>Last played " + fmtWhen(saved.ts) + "." }),
             el("div", { class: "btn-row", style: "flex-direction:column;gap:10px;width:100%;max-width:300px" }, [
                 el("button", { class: "btn primary", style: "width:100%", html: "&#9654;&#65039; Continue game", onclick: function () {
@@ -1695,8 +1698,9 @@
         var wrap = el("div", { class: "chooser fade-in" });
         wrap.appendChild(el("div", { class: "chooser-ico", html: def.icon || "&#127918;" }));
         wrap.appendChild(el("h2", { text: def.name }));
-        wrap.appendChild(el("p", { class: "small-note", text: "Choose a difficulty" }));
+        wrap.appendChild(el("p", { class: "small-note", text: def.twoPlayer ? "Play the computer, or a friend on this tablet" : "Choose a difficulty" }));
         var list = el("div", { class: "diff-list" });
+        if (def.twoPlayer) list.appendChild(el("div", { class: "diff-group", html: "&#129302; vs the computer" }));
         DIFFS.forEach(function (d) {
             var card = el("button", { class: "diff-card" + (d.id === last ? " sel" : "") }, [
                 el("span", { class: "diff-emoji", html: d.emoji }),
@@ -1705,6 +1709,16 @@
             card.addEventListener("click", function () { Sound.click(); haptic(10); save("diff_" + def.id, d.id); launchGame(def, d.id, null); });
             list.appendChild(card);
         });
+        if (def.twoPlayer) {
+            list.appendChild(el("div", { class: "diff-group", html: "&#128101; with a friend" }));
+            var two = el("button", { class: "diff-card two" + (last === "2p" ? " sel" : "") }, [
+                el("span", { class: "diff-emoji", html: "&#128101;" }),
+                el("span", { class: "diff-main" }, [ el("span", { class: "diff-label", text: "2 Players" }),
+                    el("span", { class: "diff-sub", text: def.twoPlayerHint || "Take turns on this tablet" }) ])
+            ]);
+            two.addEventListener("click", function () { Sound.click(); haptic(10); save("diff_" + def.id, "2p"); launchGame(def, "2p", null); });
+            list.appendChild(two);
+        }
         wrap.appendChild(list);
         view.appendChild(wrap); animateView();
     }

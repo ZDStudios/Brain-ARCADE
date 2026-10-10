@@ -3,17 +3,21 @@
     window.BrainGames.register({
         id: "pong", name: "Pong", icon: "&#127955;",
         gradient: "linear-gradient(135deg,#334155,#0EA5E9)",
-        best: "high", bestLabel: "Wins",
-        help: {"emoji":"&#127955;","goal":"Beat the computer to 7 points.","steps":["Drag left and right to move your paddle.","Bounce the ball back at the computer.","Score when the computer misses the ball.","First one to 7 points wins!"]},
+        best: "high", bestLabel: "Wins", difficulties: true, twoPlayer: true,
+        twoPlayerHint: "One at each end of the screen",
+        help: {"emoji":"&#127955;","goal":"First to 7 points wins.","steps":["Drag left and right to move your paddle.","Bounce the ball past the other paddle to score.","2 Players: sit at opposite ends — each of you drags your own paddle.","First one to 7 points wins!"]},
         mount: function (host, api) {
+            var TWO = api.twoPlayer;
+            var AI_SPEED = { easy: 0.0045, medium: 0.007, hard: 0.0095 }[api.difficulty] || 0.007;
+            var keys = {};
             var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.35, 600)), H = Math.round(W * 1.35);
             var ball, pw, ph, player, ai, pScore, aiScore, raf, running, wins = api.load("wins", 0), roundOver;
 
-            var sYou = stat("You", "0"), sCpu = stat("CPU", "0"), sBest = stat("Best", (api.getBest() || 0) + "");
-            host.appendChild(api.el("div", { class: "game-topline" }, [sYou.box, sCpu.box, sBest.box]));
+            var sYou = stat(TWO ? "Blue" : "You", "0"), sCpu = stat(TWO ? "Pink" : "CPU", "0"), sBest = stat("Best", (api.getBest() || 0) + "");
+            host.appendChild(api.el("div", { class: "game-topline" }, TWO ? [sYou.box, sCpu.box] : [sYou.box, sCpu.box, sBest.box]));
             var canvas = api.el("canvas", { width: W, height: H });
             host.appendChild(api.el("div", { class: "board-wrap" }, canvas));
-            host.appendChild(api.el("div", { class: "small-note", text: "Drag to move your paddle. First to 7 wins." }));
+            host.appendChild(api.el("div", { class: "small-note", text: TWO ? "Pink drags in the top half, Blue in the bottom half. First to 7!" : "Drag to move your paddle. First to 7 wins." }));
             host.appendChild(api.el("div", { class: "btn-row" }, [ api.el("button", { class: "btn", text: "Restart", onclick: reset }) ]));
             var ctx = canvas.getContext("2d");
 
@@ -32,8 +36,13 @@
                 if (roundOver) return;
                 ball.x += ball.dx; ball.y += ball.dy;
                 if (ball.x < ball.r || ball.x > W - ball.r) { ball.dx *= -1; ball.x = Math.max(ball.r, Math.min(W - ball.r, ball.x)); api.sound.tick(); }
-                // AI paddle (top)
-                var target = ball.x - pw / 2; ai += Math.max(-W * 0.007, Math.min(W * 0.007, target - ai)); ai = Math.max(0, Math.min(W - pw, ai));
+                // top paddle: the computer, or player 2 (A/D keys or their finger)
+                if (TWO) {
+                    if (keys.a) ai -= W * 0.015; if (keys.d) ai += W * 0.015;
+                } else { var target = ball.x - pw / 2; ai += Math.max(-W * AI_SPEED, Math.min(W * AI_SPEED, target - ai)); }
+                ai = Math.max(0, Math.min(W - pw, ai));
+                if (keys.ArrowLeft) player -= W * 0.015; if (keys.ArrowRight) player += W * 0.015;
+                player = Math.max(0, Math.min(W - pw, player));
                 // player paddle collision (bottom)
                 if (ball.y + ball.r > H - ph - 6 && ball.y < H - 6 && ball.x > player && ball.x < player + pw && ball.dy > 0) {
                     ball.dy = -Math.abs(ball.dy); ball.dx += ((ball.x - (player + pw / 2)) / (pw / 2)) * W * 0.004; api.sound.pop(); api.haptic(6);
@@ -51,6 +60,11 @@
             }
             function finish() {
                 running = false; roundOver = true;
+                if (TWO) {
+                    api.sound.win(); api.haptic(30);
+                    api.overlay({ emoji: "&#127942;", title: (pScore > aiScore ? "Blue" : "Pink") + " wins!", sub: "Blue " + pScore + " – " + aiScore + " Pink", buttons: [ { label: "Home", onClick: api.exit }, { label: "Rematch", primary: true, onClick: reset } ] });
+                    return;
+                }
                 if (pScore > aiScore) { wins++; api.save("wins", wins); api.setBest(wins); sBest.val.textContent = api.getBest(); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127942;", title: "You win!", sub: pScore + " – " + aiScore, buttons: [ { label: "Home", onClick: api.exit }, { label: "Rematch", primary: true, onClick: reset } ] }); }
                 else { api.sound.lose();
@@ -76,12 +90,24 @@
             }
             function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
-            function movePlayer(clientX) { var rect = canvas.getBoundingClientRect(); var x = (clientX - rect.left) * (W / rect.width); player = Math.max(0, Math.min(W - pw, x - pw / 2)); }
-            canvas.addEventListener("touchstart", function (e) { movePlayer(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
-            canvas.addEventListener("touchmove", function (e) { movePlayer(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
-            canvas.addEventListener("mousemove", function (e) { movePlayer(e.clientX); });
+            /* Every finger counts, so two players can drag at the same time: a touch in
+               the top half moves the top paddle (in 2-player mode), the bottom half the
+               bottom paddle. */
+            function moveAt(clientX, clientY) {
+                var rect = canvas.getBoundingClientRect();
+                var x = (clientX - rect.left) * (W / rect.width), y = (clientY - rect.top) * (H / rect.height);
+                var nx = Math.max(0, Math.min(W - pw, x - pw / 2));
+                if (TWO && y < H / 2) ai = nx; else player = nx;
+            }
+            function touches(e) { for (var i = 0; i < e.touches.length; i++) moveAt(e.touches[i].clientX, e.touches[i].clientY); e.preventDefault(); }
+            canvas.addEventListener("touchstart", touches, { passive: false });
+            canvas.addEventListener("touchmove", touches, { passive: false });
+            canvas.addEventListener("mousemove", function (e) { moveAt(e.clientX, e.clientY); });
+            function kd(e) { var k = e.key.length === 1 ? e.key.toLowerCase() : e.key; if (k === "ArrowLeft" || k === "ArrowRight" || (TWO && (k === "a" || k === "d"))) { keys[k] = true; e.preventDefault(); } }
+            function ku(e) { var k = e.key.length === 1 ? e.key.toLowerCase() : e.key; keys[k] = false; }
+            window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
             reset();
-            return function () { cancelAnimationFrame(raf); raf = null; };
+            return function () { cancelAnimationFrame(raf); raf = null; window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
         }
     });
 })();

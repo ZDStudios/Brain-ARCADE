@@ -3,9 +3,11 @@
     window.BrainGames.register({
         id: "airhockey", name: "Air Hockey", icon: "&#127954;",
         gradient: "linear-gradient(135deg,#0EA5E9,#6366F1)",
-        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
-        help: {"emoji":"&#127954;","goal":"Smash the puck into the bot's goal at the top. First to 7 wins!","steps":["Drag your blue mallet around your half of the rink.","Hit the puck hard — it bounces off the walls.","Bank shots off the side walls to sneak past the bot.","Guard your own goal at the bottom!"]},
+        best: "high", bestLabel: "Wins", difficulties: true, twoPlayer: true, resumable: true,
+        twoPlayerHint: "One at each end of the rink",
+        help: {"emoji":"&#127954;","goal":"Smash the puck into the other goal. First to 7 wins!","steps":["Drag your mallet around your own half of the rink.","Hit the puck hard — it bounces off the walls.","Bank shots off the side walls to sneak past.","2 Players: one at each end — you can both drag at the same time."]},
         mount: function (host, api) {
+            var TWO = api.twoPlayer;
             var sp = api.space();
             var W = Math.round(Math.min(sp.w, (sp.h - 40) / 1.5, 460)), H = Math.round(W * 1.5);
             var TARGET = 7;
@@ -17,16 +19,17 @@
 
             var MR = W * 0.085, PR = W * 0.045;
             // The bot's goal (top) is wider than yours, so scoring is easier than conceding.
-            var TGOAL = W * 0.5, T0 = (W - TGOAL) / 2, T1 = T0 + TGOAL, GOAL = W * 0.4, G0 = (W - GOAL) / 2, G1 = G0 + GOAL;
+            // vs the bot its goal is wider (easier to score than to concede); 2 players get a fair rink
+            var TGOAL = W * (TWO ? 0.44 : 0.5), T0 = (W - TGOAL) / 2, T1 = T0 + TGOAL, GOAL = W * (TWO ? 0.44 : 0.4), G0 = (W - GOAL) / 2, G1 = G0 + GOAL;
             var MAXV = H * 2.0, MALLET_V = H * 4.2;
-            var puck, you, bot, target, pScore, bScore, raf, last = 0, state = "play", pauseT = 0, flash = null, sparks = [], trail = [], botAim = 0, botThink = 0, botAttack = true, stillT = 0;
+            var puck, you, bot, target, target2, pScore, bScore, raf, last = 0, state = "play", pauseT = 0, flash = null, sparks = [], trail = [], botAim = 0, botThink = 0, botAttack = true, stillT = 0;
             var wins = api.load("wins", 0), keys = {};
 
-            var sYou = stat("You", "0"), sBot = stat("Bot", "0"), sBest = stat("Wins", (api.getBest() || 0) + "");
+            var sYou = stat(TWO ? "Blue" : "You", "0"), sBot = stat(TWO ? "Pink" : "Bot", "0"), sBest = stat(TWO ? "First to" : "Wins", TWO ? "7" : (api.getBest() || 0) + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sYou.box, sBot.box, sBest.box]));
             var canvas = api.el("canvas", { width: W, height: H, class: "ah-canvas" });
             host.appendChild(api.el("div", { class: "board-wrap" }, canvas));
-            host.appendChild(api.el("div", { class: "small-note", text: "Drag your mallet. First to " + TARGET + " wins." }));
+            host.appendChild(api.el("div", { class: "small-note", text: TWO ? "Pink plays from the top, Blue from the bottom — both drag at once. First to " + TARGET + "!" : "Drag your mallet. First to " + TARGET + " wins." }));
             host.appendChild(api.el("div", { class: "btn-row" }, [ api.el("button", { class: "btn", text: "Restart", onclick: function () { reset(null); } }) ]));
             var ctx = canvas.getContext("2d");
 
@@ -38,6 +41,7 @@
                 you = { x: W / 2, y: H * 0.82, vx: 0, vy: 0 };
                 bot = { x: W / 2, y: H * 0.18, vx: 0, vy: 0 };
                 target = { x: you.x, y: you.y };
+                target2 = { x: bot.x, y: bot.y };
                 sparks = []; trail = []; flash = null;
                 place(saved && saved.serve === "bot" ? -1 : 1);
                 showScore();
@@ -96,7 +100,8 @@
                 if (forYou) { pScore++; api.sound.good(); api.haptic(25); burst(puck.x, 4, "#FBBF24", 26); }
                 else { bScore++; api.sound.bad(); api.haptic(40); burst(puck.x, H - 4, "#F87171", 18); }
                 showScore();
-                flash = { text: forYou ? "GOAL!" : "Bot scores", color: forYou ? "#FBBF24" : "#F87171", t: 0 };
+                flash = TWO ? { text: forYou ? "BLUE SCORES!" : "PINK SCORES!", color: forYou ? "#38BDF8" : "#F472B6", t: 0 }
+                            : { text: forYou ? "GOAL!" : "Bot scores", color: forYou ? "#FBBF24" : "#F87171", t: 0 };
                 if (pScore >= TARGET || bScore >= TARGET) return finish();
                 api.saveState({ p: pScore, b: bScore, serve: forYou ? "bot" : "you" });
                 state = "goal"; pauseT = 1.1;
@@ -106,6 +111,14 @@
             function finish() {
                 state = "over"; puck.hidden = true; api.clearState();
                 var won = pScore > bScore;
+                if (TWO) {
+                    api.sound.win(); api.haptic(40);
+                    setTimeout(function () {
+                        api.overlay({ emoji: "&#127942;", title: (won ? "Blue" : "Pink") + " wins!", sub: "Blue " + pScore + " – " + bScore + " Pink",
+                            buttons: [ { label: "Home", onClick: api.exit }, { label: "Rematch", primary: true, onClick: function () { reset(null); } } ] });
+                    }, 700);
+                    return;
+                }
                 if (won) {
                     wins++; api.save("wins", wins); api.setBest(wins); sBest.val.textContent = api.getBest() || wins;
                     api.sound.win(); api.haptic(40);
@@ -149,13 +162,18 @@
                 if (keys.ArrowLeft) target.x -= W * 1.4 * dt; if (keys.ArrowRight) target.x += W * 1.4 * dt;
                 if (keys.ArrowUp) target.y -= W * 1.4 * dt; if (keys.ArrowDown) target.y += W * 1.4 * dt;
                 target.x = clamp(target.x, MR, W - MR); target.y = clamp(target.y, H / 2 + MR, H - MR);
+                if (TWO) {
+                    if (keys.a) target2.x -= W * 1.4 * dt; if (keys.d) target2.x += W * 1.4 * dt;
+                    if (keys.w) target2.y -= W * 1.4 * dt; if (keys.s) target2.y += W * 1.4 * dt;
+                    target2.x = clamp(target2.x, MR, W - MR); target2.y = clamp(target2.y, MR, H / 2 - MR);
+                }
                 if (state === "over") return;
                 if (state === "goal") { pauseT -= dt; if (pauseT <= 0) place(goal.next); return; }
                 if (state === "serve") { pauseT -= dt; if (pauseT <= 0) state = "play"; }
-                var N = 6, h = dt / N, bt = botTarget(dt);
+                var N = 6, h = dt / N, bt = TWO ? target2 : botTarget(dt);
                 for (var k = 0; k < N; k++) {
                     moveMallet(you, target.x, target.y, MALLET_V, h, false);
-                    moveMallet(bot, bt.x, bt.y, H * BOT.speed, h, true);
+                    moveMallet(bot, bt.x, bt.y, TWO ? MALLET_V : H * BOT.speed, h, true);
                     if (state !== "play") continue;
                     puck.x += puck.vx * h; puck.y += puck.vy * h;
                     hitMallet(you, true); hitMallet(bot, false); walls();
@@ -196,7 +214,7 @@
                 mallet(bot, "#F472B6", "#9D174D"); mallet(you, "#38BDF8", "#075985");
                 for (var j = 0; j < sparks.length; j++) { var s = sparks[j]; ctx.globalAlpha = Math.max(0, s.life * 2); ctx.fillStyle = s.color; ctx.fillRect(s.x - 2, s.y - 2, 4, 4); }
                 ctx.globalAlpha = 1;
-                if (state === "serve" && pauseT > 0) { ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.font = "bold " + Math.round(W * 0.05) + "px sans-serif"; ctx.textAlign = "center"; ctx.fillText(puck.y > H / 2 ? "Your puck!" : "Bot's puck", W / 2, H / 2 + (puck.y > H / 2 ? W * 0.3 : -W * 0.25)); }
+                if (state === "serve" && pauseT > 0) { ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.font = "bold " + Math.round(W * 0.05) + "px sans-serif"; ctx.textAlign = "center"; ctx.fillText(puck.y > H / 2 ? (TWO ? "Blue's puck!" : "Your puck!") : (TWO ? "Pink's puck!" : "Bot's puck"), W / 2, H / 2 + (puck.y > H / 2 ? W * 0.3 : -W * 0.25)); }
                 if (flash) {
                     var a = Math.min(1, (1.2 - flash.t) * 3), sc = 1 + Math.max(0, 0.3 - flash.t) * 2;
                     ctx.save(); ctx.globalAlpha = a; ctx.translate(W / 2, H / 2); ctx.scale(sc, sc);
@@ -221,16 +239,29 @@
             }
 
             /* ---------- input ---------- */
+            /* Each finger is tracked on its own. In 2-player mode the half of the rink a
+               finger first lands in decides whose mallet it drives, so both players can
+               play at the same time without stealing each other's mallet. */
+            var owner = {};   // pointerId -> "top" | "bottom"
             function aim(e) {
                 var r = canvas.getBoundingClientRect();
-                target.x = (e.clientX - r.left) * (W / r.width);
-                target.y = (e.clientY - r.top) * (H / r.height);
+                var x = (e.clientX - r.left) * (W / r.width), y = (e.clientY - r.top) * (H / r.height);
+                var side = owner[e.pointerId] || (TWO && y < H / 2 ? "top" : "bottom");
+                var t = side === "top" ? target2 : target;
+                t.x = x; t.y = y;
                 e.preventDefault();
             }
-            canvas.addEventListener("pointerdown", function (e) { try { canvas.setPointerCapture(e.pointerId); } catch (x) {} aim(e); });
+            canvas.addEventListener("pointerdown", function (e) {
+                try { canvas.setPointerCapture(e.pointerId); } catch (x) {}
+                var r = canvas.getBoundingClientRect();
+                owner[e.pointerId] = TWO && (e.clientY - r.top) * (H / r.height) < H / 2 ? "top" : "bottom";
+                aim(e);
+            });
             canvas.addEventListener("pointermove", aim);
-            function kd(e) { if (/^Arrow/.test(e.key)) { keys[e.key] = true; e.preventDefault(); } }
-            function ku(e) { keys[e.key] = false; }
+            function up(e) { delete owner[e.pointerId]; }
+            canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+            function kd(e) { var k = e.key.length === 1 ? e.key.toLowerCase() : e.key; if (/^Arrow/.test(k) || (TWO && /^[wasd]$/.test(k))) { keys[k] = true; e.preventDefault(); } }
+            function ku(e) { var k = e.key.length === 1 ? e.key.toLowerCase() : e.key; keys[k] = false; }
             window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
 
             reset(api.resumeState || null);

@@ -3,19 +3,21 @@
     window.BrainGames.register({
         id: "reversi", name: "Reversi", icon: "&#9899;",
         gradient: "linear-gradient(135deg,#065F46,#111827)",
-        best: "high", bestLabel: "Wins", difficulties: true, resumable: true,
+        best: "high", bestLabel: "Wins", difficulties: true, twoPlayer: true, resumable: true,
         help: {"emoji":"&#9899;","goal":"Have the most discs when the board fills up.","steps":["You are the black discs.","Tap a glowing square to place a disc.","Trap white discs between two of yours to flip them black.","Whoever has more discs at the end wins."]},
         mount: function (host, api) {
+            var TWO = api.twoPlayer;
             var N = 8, board, turn, over, wins = api.load("wins", 0), busy;
+            function who(p) { return p === 1 ? "Black" : "White"; }
             var DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
             var WEIGHT = [
                 [120,-20,20,5,5,20,-20,120],[-20,-40,-5,-5,-5,-5,-40,-20],[20,-5,15,3,3,15,-5,20],[5,-5,3,3,3,3,-5,5],
                 [5,-5,3,3,3,3,-5,5],[20,-5,15,3,3,15,-5,20],[-20,-40,-5,-5,-5,-5,-40,-20],[120,-20,20,5,5,20,-20,120]
             ];
 
-            var sYou = stat("You", "2"), sCpu = stat("CPU", "2"), sWins = stat("Wins", wins + "");
+            var sYou = stat(TWO ? "Black" : "You", "2"), sCpu = stat(TWO ? "White" : "CPU", "2"), sWins = TWO ? stat("Turn", "Black") : stat("Wins", wins + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sYou.box, sCpu.box, sWins.box]));
-            var size = Math.min(api.space().board, 440), cell = Math.floor(size / N);
+            var size = Math.min(api.space().board, api.space().isTablet ? 600 : 440), cell = Math.floor(size / N) - 2;
             var boardEl = api.el("div", { style: "display:grid;grid-template-columns:repeat(" + N + "," + cell + "px);gap:2px;background:#0B3D2E;padding:6px;border-radius:10px" });
             host.appendChild(api.el("div", { class: "board-wrap" }, boardEl));
             var msg = api.el("div", { class: "small-note", text: "You are black. Outflank the AI's discs. Tap a highlighted square." });
@@ -63,7 +65,22 @@
                 }
                 saveNow();
             }
+            /* Two players on one tablet: same rules, the turn just alternates (and
+               passes back when the other side has nowhere to go). */
+            function play2(i) {
+                if (over || !flips(board, i, turn).length) return;
+                place(board, i, turn); api.sound.click(); api.haptic(8);
+                turn = -turn;
+                if (!legal(board, turn).length && legal(board, -turn).length) {
+                    msg.textContent = who(turn) + " has no move \u2014 " + who(-turn) + " goes again.";
+                    turn = -turn;
+                } else msg.textContent = who(turn) + "'s turn.";
+                sWins.val.textContent = who(turn);
+                paint(legal(board, turn));
+                endCheck();
+            }
             function play(i) {
+                if (TWO) return play2(i);
                 if (over || busy || turn !== 1) return;
                 if (!flips(board, i, 1).length) return;
                 place(board, i, 1); api.sound.click(); api.haptic(8); turn = -1; paint();
@@ -105,6 +122,12 @@
                 if (legal(board, 1).length || legal(board, -1).length) return false;
                 over = true; var c = counts(board);
                 api.clearState();
+                if (TWO) {
+                    var t = c.y > c.c ? "Black wins!" : c.c > c.y ? "White wins!" : "Draw";
+                    if (c.y !== c.c) api.sound.win(); else api.sound.pop();
+                    api.overlay({ emoji: c.y === c.c ? "&#129309;" : "&#127942;", title: t, sub: "Black " + c.y + " &ndash; " + c.c + " White", buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] });
+                    return true;
+                }
                 if (c.y > c.c) { wins++; api.save("wins", wins); sWins.val.textContent = wins; api.setBest(wins); api.sound.win(); api.haptic(30);
                     api.overlay({ emoji: "&#127942;", title: "You win!", sub: c.y + " – " + c.c, buttons: [ { label: "Home", onClick: api.exit }, { label: "Again", primary: true, onClick: reset } ] }); }
                 else if (c.c > c.y) { api.sound.lose();
@@ -115,13 +138,18 @@
             function reset() {
                 board = new Array(N * N).fill(0); over = false; busy = false; turn = 1;
                 board[27] = 1; board[28] = -1; board[35] = -1; board[36] = 1;
-                msg.textContent = "You are black. Tap a highlighted square.";
+                msg.textContent = TWO ? "Black goes first. Tap a highlighted square." : "You are black. Tap a highlighted square.";
+                if (TWO) sWins.val.textContent = "Black";
+                api.clearState();
                 build(); paint(legal(board, 1));
             }
             function restore(rs) {
                 board = rs.board.slice(); turn = rs.turn || 1; over = false; busy = false;
-                msg.textContent = "You are black. Tap a highlighted square.";
-                build(); paint(legal(board, 1));
+                msg.textContent = TWO ? who(turn) + "'s turn." : "You are black. Tap a highlighted square.";
+                if (TWO) sWins.val.textContent = who(turn);
+                build(); paint(legal(board, TWO ? turn : 1));
+                // Saved during the computer's turn: let it move instead of freezing.
+                if (!TWO && turn === -1) next();
             }
             if (api.resumeState && api.resumeState.board && api.resumeState.board.length === N * N) restore(api.resumeState);
             else reset();
