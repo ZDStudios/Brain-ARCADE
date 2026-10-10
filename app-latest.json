@@ -1,6 +1,6 @@
 {
-  "versionCode": 26,
-  "versionName": "1.17.0",
+  "versionCode": 27,
+  "versionName": "1.18.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "2-player mode for Chess, Air Hockey, Pong, Connect Four, Reversi and Tic-Tac-Toe! Chess now shows every move you can make, the last move the computer made, and explains check."
 }
