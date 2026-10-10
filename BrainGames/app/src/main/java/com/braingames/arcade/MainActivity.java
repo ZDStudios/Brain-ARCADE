@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.21.0";
+    private static final String BUNDLED_VERSION = "1.22.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -154,6 +154,24 @@ public class MainActivity extends Activity {
        applyKiosk() for why.                                                        */
 
     private boolean isKioskEnabled() { return prefs.getBoolean(PREF_KIOSK, false); }
+
+    /**
+     * Tell the page whether Brain Arcade is actually on screen. The WebView keeps
+     * running in the background, so without this a tablet that was left on
+     * Settings (or any screen) kept telling the dashboard it was still there.
+     */
+    private void notifyAppVisible(boolean visible) {
+        try {
+            if (webView != null) webView.evaluateJavascript(
+                "window.BrainGames && window.BrainGames.onAppVisible && window.BrainGames.onAppVisible(" + visible + ");", null);
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onPause() {
+        notifyAppVisible(false);
+        super.onPause();
+    }
 
     private boolean hasCameraPermissionInternal() {
         try { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
@@ -425,6 +443,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        notifyAppVisible(true);
         // Kiosk no longer pins the screen; clear a pin an older build may have set,
         // which would otherwise keep blocking updates.
         if (inLockTask()) { try { stopLockTask(); } catch (Exception ignored) {} }
@@ -1052,6 +1071,10 @@ public class MainActivity extends Activity {
                     Bitmap small = Bitmap.createBitmap(bw, bh, Bitmap.Config.RGB_565);
                     Canvas c = new Canvas(small);
                     c.scale(scale, scale);
+                    // The WebView paints only what is on screen, at its scroll position.
+                    // Without this the capture showed the page from the top, which is
+                    // blank once you scroll down (that was the "only works at the top" bug).
+                    c.translate(-webView.getScrollX(), -webView.getScrollY());
                     webView.draw(c);
                     java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
                     small.compress(Bitmap.CompressFormat.JPEG, quality, bos);

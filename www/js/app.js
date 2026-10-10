@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.21.0";
+    var VERSION = "1.22.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -393,42 +393,6 @@
             });
             obs.observe(document.body, { childList: true, subtree: true });
         } catch (e) {}
-    }
-
-    /* ============================================================
-       Play stats — how often and how long each game gets played.
-       Feeds the in-app Stats screen and the admin dashboard.
-       ============================================================ */
-    var stats = load("stats", {});          // id -> { plays, ms, last }
-    function statFor(id) {
-        var s = stats[id];
-        if (!s) { s = stats[id] = { plays: 0, ms: 0, last: 0 }; }
-        if (typeof s.plays !== "number") s.plays = 0;
-        if (typeof s.ms !== "number") s.ms = 0;
-        return s;
-    }
-    function notePlayStart(id) { var s = statFor(id); s.plays++; s.last = Date.now(); save("stats", stats); }
-    function notePlayTime(id, ms) {
-        if (!id || !(ms > 0)) return;
-        var s = statFor(id); s.ms += ms; s.last = Date.now();
-        save("stats", stats); addScreenTime(ms);
-    }
-    function totalPlays() { var n = 0; for (var k in stats) n += stats[k].plays || 0; return n; }
-    function totalTimeMs() { var n = 0; for (var k in stats) n += stats[k].ms || 0; return n; }
-    function fmtDuration(ms) {
-        var s = Math.round((ms || 0) / 1000);
-        if (s < 60) return s + "s";
-        var m = Math.floor(s / 60);
-        if (m < 60) return m + "m";
-        return Math.floor(m / 60) + "h " + (m % 60) + "m";
-    }
-    function fmtWhen(ts) {
-        if (!ts) return "never";
-        var d = Math.round((Date.now() - ts) / 60000);
-        if (d < 1) return "just now";
-        if (d < 60) return d + "m ago";
-        if (d < 1440) return Math.round(d / 60) + "h ago";
-        return Math.round(d / 1440) + "d ago";
     }
 
     /* ============================================================
@@ -1350,8 +1314,32 @@
         });
         if (changed && route === "home") renderHome();
     }
+    /* Is Brain Arcade actually on screen? The installed app says so on every
+       pause/resume (the WebView keeps running in the background, so a tablet left
+       on Settings used to keep reporting "In Settings" from behind the Android
+       home screen). document.hidden covers browsers. */
+    var appVisible = true;
+    function onAppVisible(v) {
+        v = !!v;
+        if (appVisible === v) return;
+        appVisible = v;
+        lastActive = Date.now();
+        poll();                       // tell the dashboard straight away
+    }
+    document.addEventListener("visibilitychange", function () { onAppVisible(!document.hidden); });
+    // Moving to another screen or game: tell the dashboard now instead of on the
+    // next 15-second check-in (straight away on a WiFi server; a few seconds later
+    // on Render, which is never asked more than once per change).
+    var lastSentActivity = null, activityTimer = null;
+    setInterval(function () {
+        if (!lastSentActivity || activityTimer) return;
+        var a = currentActivity();
+        if (a.label === lastSentActivity.label) return;
+        activityTimer = setTimeout(function () { activityTimer = null; poll(); }, fastLink() ? 150 : 2500);
+    }, 1000);
     /** What the tablet is doing right now, for the dashboard. */
     function currentActivity() {
+        if (!appVisible || document.hidden) return { where: "away", label: "Brain Arcade is closed / in the background" };
         if (saver) return { where: "screensaver", label: "Screensaver" };
         if (effLocked && effLocked()) return { where: "locked", label: "Locked" };
         if (route === "game" && routeArg) {
@@ -1379,7 +1367,7 @@
                 streak: daily.streak || 0, achievements: unlocked().length, achievementsTotal: ACHIEVEMENTS.length,
                 todayMs: (screenTime.day === todayKey() ? screenTime.ms : 0), limitMin: limitMin()
             },
-            playing: currentActivity(),
+            playing: (lastSentActivity = currentActivity()),
             canCamera: cameraCapable(),
             platform: platformLabel(),
             canFind: canFindNative(),
@@ -2583,7 +2571,7 @@
     }
 
     window.BrainGames = {
-        register: register, boot: boot, handleBack: handleBack, toast: toast, go: go,
+        register: register, boot: boot, handleBack: handleBack, toast: toast, go: go, onAppVisible: onAppVisible,
         openSettings: openSettings, onUpdate: onUpdate, updateBlocked: updateBlocked, version: VERSION,
         // Kiosk controls, so the app can be unlocked/left from anywhere (including
         // the dashboard's remote control).

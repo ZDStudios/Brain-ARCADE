@@ -314,10 +314,20 @@ the games while you're playing. TV layout (bigger type, 4–5 column grid,
 overscan-safe margins) turns on automatically and can be forced in
 **Settings → Appearance → TV mode**.
 
+## 💾 The dashboard saves by itself
+There is no **Save changes** button any more. Locking, **Allow all / Allow none** and
+ticking games on or off are sent to the tablet straight away; ticking several games in
+a row is sent as one change a moment after the last tick. The card shows *Saving…* /
+*Saved* (and keeps retrying if the connection drops). Changes made from another
+dashboard (say the WiFi one and the Render one) now show up without reloading.
+
 ## 👀 See what they're playing
 Each device card shows what the tablet is doing **right now** — the game it is in
-(“♟ Chess — playing now”), or Home screen / Settings / Screensaver / Locked — so you
-can tell at a glance whether a tablet is being used and for what.
+(“♟ Chess — playing now”), or Home screen / Settings / Screensaver / Locked, or
+*Brain Arcade is closed / in the background* — so you can tell at a glance whether a
+tablet is being used and for what. It updates as soon as the tablet changes screen
+(within a second on the WiFi server, a few seconds on Render), not on the next
+15-second check-in.
 
 ## 📷 Where is it? (camera photo)
 Lost the tablet, or want to check what it is pointed at? **📷 Where is it?** on the

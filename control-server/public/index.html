@@ -45,6 +45,7 @@
     .games input { accent-color:var(--accent); width:20px; height:20px; flex:0 0 auto; }
     .lockbadge { font-size:12px; padding:3px 9px; border-radius:20px; background:#7F1D1D; color:#fff; }
     .kioskbadge { font-size:12px; padding:3px 9px; border-radius:20px; background:#4C1D95; color:#fff; }
+    .savestate { align-self:center; font-size:13px; color:var(--muted); padding:0 6px; }
     .nowplaying { font-size:13px; color:var(--accent2); margin:4px 0 2px; min-height:16px; }
     .nowplaying b { color:var(--text); }
     .photo-wrap { position:relative; flex:1; width:100%; max-width:520px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -165,7 +166,8 @@ function render(devices){
     if(!devices.length){ list.innerHTML='<div class="empty">No devices yet. Open the app on a tablet with the control URL set in Settings.</div>'; return; }
     list.innerHTML="";
     devices.forEach(function(d){
-        if(!draft[d.id]) draft[d.id]={ locked:d.policy.locked, allowedGames:d.policy.allowedGames };
+        // Follow what the server has, unless a change made here is still saving.
+        if(!draft[d.id] || !pending[d.id]) draft[d.id]={ locked:d.policy.locked, allowedGames:d.policy.allowedGames?d.policy.allowedGames.slice():null };
         var st=draft[d.id];
         var card=document.createElement("div"); card.className="device";
         var allowed = st.allowedGames; // null = all
@@ -189,7 +191,7 @@ function render(devices){
                 '<button class="btn '+(st.locked?'danger active':'')+'" data-lock="'+d.id+'">'+(st.locked?'🔒 Locked — tap to unlock':'🔓 Lock this tablet')+'</button>'+
                 '<button class="btn" data-all="'+d.id+'">Allow all</button>'+
                 '<button class="btn" data-none="'+d.id+'">Allow none</button>'+
-                '<button class="btn primary" data-save="'+d.id+'">Save changes</button>'+
+                '<span class="savestate" data-savestate="'+d.id+'">'+(saveText[d.id]||'&#10003; Changes save automatically')+'</span>'+
             '</div>'+
             '<div class="row">'+
                 '<button class="btn" data-scores="'+d.id+'">&#128202; Scores &amp; stats</button>'+
@@ -210,9 +212,9 @@ function render(devices){
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
 function wire(){
-    document.querySelectorAll("[data-lock]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-lock"); draft[id].locked=!draft[id].locked; poll(true); }; });
-    document.querySelectorAll("[data-all]").forEach(function(b){ b.onclick=function(){ draft[b.getAttribute("data-all")].allowedGames=null; poll(true); }; });
-    document.querySelectorAll("[data-none]").forEach(function(b){ b.onclick=function(){ draft[b.getAttribute("data-none")].allowedGames=[]; poll(true); }; });
+    document.querySelectorAll("[data-lock]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-lock"); draft[id].locked=!draft[id].locked; autoSave(id, 0); poll(true); }; });
+    document.querySelectorAll("[data-all]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-all"); draft[id].allowedGames=null; autoSave(id, 0); poll(true); }; });
+    document.querySelectorAll("[data-none]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-none"); draft[id].allowedGames=[]; autoSave(id, 0); poll(true); }; });
     document.querySelectorAll('.games input').forEach(function(cb){ cb.onchange=function(){
         var id=cb.getAttribute("data-dev"), g=cb.getAttribute("data-game");
         var st=draft[id];
@@ -220,9 +222,10 @@ function wire(){
         if(!st.allowedGames) st.allowedGames=gamesFor(d).map(function(x){return x[0];});
         var i=st.allowedGames.indexOf(g);
         if(cb.checked){ if(i<0) st.allowedGames.push(g); } else { if(i>-1) st.allowedGames.splice(i,1); }
+        // Ticking several games in a row sends one save, a moment after the last tick.
+        autoSave(id, 450);
         poll(true);
     }; });
-    document.querySelectorAll("[data-save]").forEach(function(b){ b.onclick=function(){ save(b.getAttribute("data-save")); }; });
     document.querySelectorAll("[data-msg]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-msg");
         var text=prompt("Message to show on the tablet:");
         if(text==null||!text.trim()) return;
@@ -259,12 +262,37 @@ function wire(){
         fetch("/api/device/remove",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} delete draft[id]; poll(); }); }; });
 }
-function save(id){
-    var st=draft[id];
-    fetch("/api/policy",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},
-        body:JSON.stringify({deviceId:id,locked:st.locked,allowedGames:st.allowedGames})})
-    .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} return r.json(); })
-    .then(function(){ var el=document.querySelector('[data-save="'+id+'"]'); if(el){el.textContent="Saved ✓"; setTimeout(function(){el.textContent="Save changes";},1200);} });
+/* Changes save themselves: no Save button. A change marks the device "pending"
+   so the 3-second refresh does not overwrite it with the old server copy before
+   it has been sent; once the server has it, the card follows the server again. */
+var pending={}, saveTimers={}, saveText={};
+function setSaveText(id, html){
+    saveText[id]=html;
+    var el=document.querySelector('[data-savestate="'+id+'"]'); if(el) el.innerHTML=html;
+}
+function autoSave(id, delay){
+    pending[id]=true;
+    setSaveText(id,'Saving&hellip;');
+    clearTimeout(saveTimers[id]);
+    saveTimers[id]=setTimeout(function(){ save(id); }, delay||0);
+}
+function save(id, attempt){
+    var st=draft[id]; if(!st) return;
+    var sent=JSON.stringify({deviceId:id,locked:st.locked,allowedGames:st.allowedGames});
+    fetch("/api/policy",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:sent})
+    .then(function(r){
+        if(r.status===401){ pending[id]=false; setSaveText(id,'&#9888;&#65039; Wrong admin token &mdash; not saved'); return; }
+        if(!r.ok) throw new Error("HTTP "+r.status);
+        // Only clear "pending" if nothing changed while this save was on its way.
+        var now=JSON.stringify({deviceId:id,locked:draft[id].locked,allowedGames:draft[id].allowedGames});
+        if(now===sent){ pending[id]=false; setSaveText(id,'&#10003; Saved'); setTimeout(function(){ if(!pending[id]) setSaveText(id,'&#10003; Changes save automatically'); },2000); }
+    })
+    .catch(function(){
+        var n=(attempt||0)+1;
+        setSaveText(id,'&#9888;&#65039; Not saved yet &mdash; retrying&hellip;');
+        clearTimeout(saveTimers[id]);
+        saveTimers[id]=setTimeout(function(){ save(id, n); }, Math.min(10000, 1000*n));
+    });
 }
 var lastDevices=[];
 function poll(fromDraft){
@@ -434,7 +462,7 @@ function ensureScreen(){
             });
             img.addEventListener("pointermove",function(e){
                 if(startY===null) return;
-                var rect=img.getBoundingClientRect();
+                var rect=picRect(img);
                 var slop=Math.max(8, rect.height*0.02);
                 var dy=e.clientY-lastY;
                 if(Math.abs(e.clientY-startY)>slop || Math.abs(e.clientX-startX)>slop) moved=true;
@@ -445,7 +473,7 @@ function ensureScreen(){
             });
             img.addEventListener("pointerup",function(e){
                 if(startY===null) return;
-                var rect=img.getBoundingClientRect();
+                var rect=picRect(img);
                 var total=e.clientY-startY;
                 // Threshold scales with the preview size so it behaves the same
                 // whether the panel is small or full-screen.
@@ -461,14 +489,23 @@ function ensureScreen(){
             });
             img.addEventListener("pointercancel",function(){ startY=lastY=startX=null; moved=false; });
             img.addEventListener("wheel",function(e){
-                var rect=img.getBoundingClientRect();
+                var rect=picRect(img);
                 sendScroll(e.deltaY/rect.height); e.preventDefault();
             },{passive:false});
         }
         return img;
 }
+/* The preview is object-fit:contain, so the picture is smaller than the <img>
+   box and has bars on two sides. Taps and drags must be measured against the
+   picture itself, or they land off-target (worse the more the shapes differ). */
+function picRect(img){
+    var r=img.getBoundingClientRect(), nw=img.naturalWidth, nh=img.naturalHeight;
+    if(!nw||!nh) return r;
+    var s=Math.min(r.width/nw, r.height/nh), w=nw*s, h=nh*s;
+    return { left:r.left+(r.width-w)/2, top:r.top+(r.height-h)/2, width:w, height:h };
+}
 function sendTap(img,cx,cy){
-    var rect=img.getBoundingClientRect();
+    var rect=picRect(img);
     var x=(cx-rect.left)/rect.width, y=(cy-rect.top)/rect.height;
     if(x<0||x>1||y<0||y>1) return;
     // visual ping
