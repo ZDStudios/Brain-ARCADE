@@ -43,24 +43,47 @@ final class LanDiscovery {
 
     private static volatile String found = "";
     private static volatile boolean running = false;
+    /** Human-readable account of the last search, shown in Settings to help fix problems. */
+    private static volatile String report = "Not searched yet";
 
     private LanDiscovery() {}
 
     static String result() { return found; }
     static boolean busy() { return running; }
+    static String lastReport() { return report; }
 
-    static synchronized void start() {
+    static void start() { start(true); }
+
+    /** full = also scan the /24 if nobody answers the broadcast; quick = broadcast only. */
+    static synchronized void start(final boolean full) {
         if (running) return;
         running = true;
+        report = "Searching\u2026";
         Thread t = new Thread(new Runnable() {
             public void run() {
+                StringBuilder r = new StringBuilder();
                 try {
+                    List<Inet4Address> own = ownAddresses();
+                    if (!own.isEmpty()) r.append("Tablet is ").append(own.get(0).getHostAddress()).append(". ");
                     String url = byBroadcast();
-                    if (url == null) url = byScan();
-                    found = url == null ? "" : url;
-                } catch (Throwable ignored) {
-                    found = "";
+                    if (url != null) r.append("Server answered the WiFi broadcast.");
+                    else {
+                        r.append("No answer to the WiFi broadcast");
+                        if (full) {
+                            url = byScan();
+                            r.append(url != null ? "; found it by scanning the network." : "; scanned the network on port " + HTTP_PORT + " and found nothing.");
+                        } else r.append(".");
+                    }
+                    // A quick search that finds nothing keeps the last good answer: a
+                    // dropped broadcast should not throw away a working server.
+                    if (url == null && own.isEmpty()) r.append(" This tablet does not seem to be on a home WiFi network.");
+                    if (url != null) found = url;
+                    else if (full) found = "";
+                } catch (Throwable e) {
+                    r.append("Search failed: ").append(e.getClass().getSimpleName());
+                    if (full) found = "";
                 } finally {
+                    report = r.toString();
                     running = false;
                 }
             }

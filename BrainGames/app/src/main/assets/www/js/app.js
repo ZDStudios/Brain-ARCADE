@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.18.0";
+    var VERSION = "1.19.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1133,23 +1133,36 @@
         var hasMp = GAMES.some(function (g) { return g.requiresServer; });
         if (hasMp && route === "home") renderHome();
     }
-    /* ---- WiFi fallback server ----
-       The Render server stays first choice. When it does not answer, the app looks
-       for a Brain Arcade server running on a computer on the same WiFi
-       (local-server/brain_arcade_server.py or the .exe) and uses that instead, then
-       checks Render again every minute or so and moves back as soon as it is up.
-       Finding the computer is done natively (UDP broadcast, then a scan of the
-       /24), so only the installed app does it. A browser opening the computer's own
-       /play/ page talks to that computer already. */
+    /* ---- WiFi server (Brain Arcade Server on a computer at home) ----
+       local-server/brain_arcade_server.py or BrainArcadeServer.exe. By default a
+       server found on this WiFi is used FIRST whenever it is running — somebody
+       who started it on their laptop wants the tablets on it, and the Render
+       server may well still be answering. Render is used when no WiFi server is
+       up. ("Only when the main server is down" is a setting.)
+       The computer is found natively (UDP broadcast, then a scan of the /24), so
+       only the installed app (1.17+) can search. Anyone can type the computer's
+       address instead, which also works on 1.17+ (older APKs block http://). */
     if (settings.lanServer === undefined) settings.lanServer = true;
+    if (settings.lanPrefer === undefined) settings.lanPrefer = true;
     var localUrl = "";          // the WiFi server we are using (or last used)
     var usingLocal = false;
-    var pollsOnLocal = 0;
+    var pollsOnLocal = 0, pollCount = 0;
     var lastLanScan = 0;
+    var lastLocalError = "";
     function primaryUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
     function serverUrl() { return usingLocal && localUrl ? localUrl : primaryUrl(); }
     function lanCapable() { return !!(window.AndroidBridge && typeof window.AndroidBridge.findLocalServer === "function"); }
     function lanEnabled() { return settings.lanServer !== false && lanCapable(); }
+    /** "192.168.1.20" / "192.168.1.20:9000" / a full URL -> "http://192.168.1.20:8787" */
+    function manualUrl() {
+        var v = (settings.lanManual || "").trim().replace(/\/+$/, "");
+        if (!v || settings.lanServer === false) return "";
+        if (!/^https?:\/\//i.test(v)) v = "http://" + v;
+        if (!/:\d+$/.test(v.replace(/^https?:\/\//i, ""))) v += ":8787";
+        return v;
+    }
+    function lanOn() { return lanEnabled() || !!manualUrl(); }
+    function lanCandidate() { return manualUrl() || (lanEnabled() ? bridgeCall("localServer", "") || "" : ""); }
     /** Kick off a WiFi search (at most every 20s); the result is read on a later poll. */
     function scanLan(force) {
         if (!lanEnabled() || bridgeCall("findingLocalServer", false)) return false;
@@ -1157,6 +1170,14 @@
         lastLanScan = Date.now();
         bridgeCall("findLocalServer", null);
         return true;
+    }
+    /** Cheap periodic re-check while on Render: broadcast only (1.18+), else a full search now and then. */
+    function quickLan() {
+        if (!lanEnabled() || bridgeCall("findingLocalServer", false)) return false;
+        if (window.AndroidBridge && typeof window.AndroidBridge.findLocalServerQuick === "function") {
+            bridgeCall("findLocalServerQuick", null); return true;
+        }
+        return scanLan(false);   // 1.17: no quick search, so a full one (still at most every 20s)
     }
     function online() {
         try { if (window.AndroidBridge && typeof window.AndroidBridge.isOnline === "function") return !!window.AndroidBridge.isOnline(); } catch (e) {}
@@ -1186,8 +1207,9 @@
         if (changed && route === "home") renderHome();
     }
     function poll() {
-        if (!lanEnabled()) usingLocal = false;
-        if (!primaryUrl() && !lanEnabled()) { usingLocal = false; setDot("off"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(30000); }
+        pollCount++;
+        if (!lanOn()) usingLocal = false;
+        if (!primaryUrl() && !lanOn()) { usingLocal = false; setDot("off"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(30000); }
         if (!online()) { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(12000); }
         var body = {
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
@@ -1223,32 +1245,45 @@
             setServerLive(true);
             applyPolicy(data || {});
         }
-        function fail() { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); }
-        // The main server did not answer: is there one on this WiFi?
-        function tryLocal() {
-            var cand = bridgeCall("localServer", "") || "";
-            if (cand) {
-                return beat(cand).then(function (data) {
-                    var was = usingLocal;
-                    localUrl = cand; usingLocal = true; pollsOnLocal = 0;
-                    if (!was) toast("&#128225; Connected to the server on this WiFi");
-                    ok(data);
-                }, function () { usingLocal = false; soon = scanLan(true); fail(); });
-            }
-            usingLocal = false; soon = scanLan(false); fail();
+        function fail() { usingLocal = false; setDot("offline"); setGovern(false); setServerLive(false); stopStream(); }
+        function onLocal(url) {
+            return function (data) {
+                if (!usingLocal || localUrl !== url) toast("&#128225; Connected to the server on this WiFi");
+                localUrl = url; usingLocal = true; lastLocalError = "";
+                ok(data);
+            };
         }
-        var run;
-        if (usingLocal) {
-            pollsOnLocal++;
-            var local = function () { return beat(localUrl).then(ok, function () { usingLocal = false; return tryLocal(); }); };
-            // About once a minute, check whether the main server is back.
-            run = (primaryUrl() && pollsOnLocal % 4 === 0)
-                ? beat(primaryUrl()).then(function (data) { usingLocal = false; toast("&#9729;&#65039; Back on the main server"); ok(data); }, local)
-                : local();
-        } else if (primaryUrl()) {
-            run = beat(primaryUrl()).then(ok, tryLocal);
+        function onPrimary(data) {
+            if (usingLocal) toast("&#9729;&#65039; Back on the main server");
+            usingLocal = false; ok(data);
+        }
+        function viaLocal(url, orElse) {
+            return beat(url).then(onLocal(url), function (e) {
+                lastLocalError = url.replace(/^https?:\/\//, "") + " did not answer";
+                // A server we knew about went away: search again (rate-limited).
+                if (!manualUrl()) soon = scanLan(true) || soon;
+                return orElse();
+            });
+        }
+        function viaPrimary(orElse) {
+            if (!primaryUrl()) return Promise.resolve().then(orElse);
+            return beat(primaryUrl()).then(onPrimary, orElse);
+        }
+        function nothing() { soon = scanLan(false) || soon; fail(); }
+        var run, cand = lanOn() ? lanCandidate() : "";
+        if (usingLocal) pollsOnLocal++;
+        if (settings.lanPrefer !== false) {
+            if (cand) run = viaLocal(cand, function () { return viaPrimary(nothing); });
+            else {
+                // On Render (or nothing): keep an ear out for a WiFi server starting up.
+                if (pollCount % 4 === 1) soon = quickLan() || soon;
+                run = viaPrimary(nothing);
+            }
+        } else if (usingLocal && localUrl && pollsOnLocal % 4 !== 0) {
+            run = viaLocal(localUrl, function () { return viaPrimary(nothing); });
         } else {
-            run = Promise.resolve().then(tryLocal);
+            // Only when the main server is down; about once a minute see if it is back.
+            run = viaPrimary(function () { return cand ? viaLocal(cand, nothing) : nothing(); });
         }
         run.catch(fail).finally(function () { schedulePoll(streaming ? 4000 : soon ? 4500 : 15000); });
     }
@@ -1951,26 +1986,10 @@
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the dashboard and to other players", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL",
             serverConnected() && !usingLocal ? "Connected \u2705 \u2014 multiplayer is available"
-                              : (primaryUrl() ? "Not reachable right now" + (usingLocal ? " \u2014 using the WiFi server below" : "") : "Blank \u2014 no dashboard, no multiplayer"),
+                              : usingLocal ? "Using the WiFi server below instead"
+                              : (primaryUrl() ? "Not reachable right now" : "Blank \u2014 no dashboard, no multiplayer"),
             "serverUrl", defaultServerUrl()));
-        if (lanCapable()) {
-            g4.appendChild(toggleRow("&#128225;", "Use a server on this WiFi",
-                usingLocal && serverConnected() ? "Connected to " + localUrl.replace(/^https?:\/\//, "") + " \u2705"
-                    : "If the main server is down, connect to Brain Arcade Server running on a computer here",
-                "lanServer"));
-            g4.appendChild(el("div", { class: "setting-row" }, [
-                el("div", { class: "s-ico", html: "&#128269;" }),
-                el("div", { class: "s-text" }, [
-                    el("div", { class: "s-title", text: "Look for a WiFi server now" }),
-                    el("div", { class: "s-sub", text: bridgeCall("localServer", "") ? "Last found: " + bridgeCall("localServer", "").replace(/^https?:\/\//, "") : "Start the server on your computer first" })
-                ]),
-                el("button", { class: "btn", text: "Search", onclick: function () {
-                    if (!settings.lanServer) { settings.lanServer = true; save("settings", settings); }
-                    scanLan(true); Sound.click(); toast("Looking for a server on this WiFi\u2026");
-                    setTimeout(function () { poll(); setTimeout(function () { if (route === "settings") renderSettings(); }, 1500); }, 4500);
-                } })
-            ]));
-        }
+        if (window.AndroidBridge) appendWifiServerRows(g4);
         // The URL is built in, so getting back to it should not mean typing it out.
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#127968;" }),
@@ -2026,6 +2045,85 @@
         view.appendChild(wrap);
         animateView(); window.scrollTo(0, 0);
         poll();
+    }
+    /* ---------- Settings: WiFi server (Brain Arcade Server on a computer) ----------
+       Everything needed to see why a tablet is or is not on the laptop's server. */
+    function appendWifiServerRows(g) {
+        var host = localUrl.replace(/^https?:\/\//, "");
+        var status = usingLocal && serverConnected() ? "\u2705 Connected to the WiFi server at " + host
+            : serverConnected() ? "Using the main server" + (lanOn() ? " \u2014 no WiFi server found yet" : "")
+            : lastLocalError ? "\u274C " + lastLocalError : "Not connected to any server";
+        g.appendChild(toggleRow("&#128225;", "Use a server on this WiFi", status, "lanServer"));
+        if (!lanCapable()) {
+            var av = appVersion();
+            g.appendChild(el("div", { class: "setting-row warn-row" }, [
+                el("div", { class: "s-ico", html: "&#9888;&#65039;" }),
+                el("div", { class: "s-text" }, [
+                    el("div", { class: "s-title", text: "Update the app to use a WiFi server" }),
+                    el("div", { class: "s-sub", text: "This app" + (av ? " (v" + av.name + ")" : "") + " cannot find or reach a computer on the WiFi. Install Brain Arcade 1.17 or newer \u2014 the games update by themselves, but this part needs the new app." })
+                ]),
+                el("button", { class: "btn primary", text: "Update app", onclick: function () {
+                    Sound.click();
+                    try { if (window.AndroidBridge.checkUpdate) { window.AndroidBridge.checkUpdate(); toast("Looking for the new app\u2026"); return; } } catch (e) {}
+                    toast("Download BrainArcade-debug.apk from the GitHub Releases page");
+                } })
+            ]));
+        }
+        g.appendChild(toggleRow("&#11088;", "Prefer the WiFi server",
+            settings.lanPrefer !== false ? "On: whenever a WiFi server is running, tablets use it" : "Off: only when the main server is down", "lanPrefer"));
+        // Typing the computer's address works even when the WiFi search cannot find it.
+        var input = el("input", { type: "text", class: "text-input", value: settings.lanManual || "", placeholder: "Computer's address, e.g. 192.168.1.20 (optional)", inputmode: "url" });
+        var result = el("div", { class: "s-sub", text: "Shown in the server window on the computer" });
+        input.addEventListener("change", function () { settings.lanManual = input.value.trim(); save("settings", settings); poll(); });
+        g.appendChild(el("div", { class: "setting-row col" }, [
+            el("div", { class: "row-head" }, [
+                el("div", { class: "s-ico", html: "&#128187;" }),
+                el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Computer's address" }), result ]),
+                el("button", { class: "btn", text: "Test", onclick: function () {
+                    Sound.click();
+                    settings.lanManual = input.value.trim(); save("settings", settings);
+                    var url = manualUrl() || lanCandidate();
+                    if (!url) { result.textContent = "Type the address shown in the server window first, or tap Search."; return; }
+                    testLan(url, result);
+                } })
+            ]),
+            input
+        ]));
+        if (lanCapable()) {
+            var rep = bridgeCall("localServerReport", "") || (bridgeCall("localServer", "") ? "Last found: " + bridgeCall("localServer", "").replace(/^https?:\/\//, "") : "Start the server on your computer first");
+            var repEl = el("div", { class: "s-sub", text: rep });
+            g.appendChild(el("div", { class: "setting-row" }, [
+                el("div", { class: "s-ico", html: "&#128269;" }),
+                el("div", { class: "s-text" }, [ el("div", { class: "s-title", text: "Look for a WiFi server now" }), repEl ]),
+                el("button", { class: "btn", text: "Search", onclick: function () {
+                    if (!settings.lanServer) { settings.lanServer = true; save("settings", settings); }
+                    Sound.click(); repEl.textContent = "Searching\u2026";
+                    scanLan(true);
+                    var tries = 0;
+                    (function wait() {
+                        if (bridgeCall("findingLocalServer", false) && tries++ < 30) { setTimeout(wait, 400); return; }
+                        var found = bridgeCall("localServer", "");
+                        repEl.textContent = (found ? "\u2705 Found " + found.replace(/^https?:\/\//, "") + ". " : "\u274C Nothing found. ") + (bridgeCall("localServerReport", "") || "");
+                        if (found) { poll(); setTimeout(function () { if (route === "settings") renderSettings(); }, 2500); }
+                    })();
+                } })
+            ]));
+        }
+    }
+    function testLan(url, out) {
+        var host = url.replace(/^https?:\/\//, "");
+        out.textContent = "Testing " + host + "\u2026";
+        var signal = "timeout" in AbortSignal ? AbortSignal.timeout(5000) : undefined;
+        fetch(url + "/api/ping", { signal: signal }).then(function (r) { return r.json(); }).then(function (j) {
+            if (!j || !j.brainArcade) throw new Error("not Brain Arcade");
+            out.textContent = "\u2705 Brain Arcade Server found on " + (j.name || host) + " \u2014 connecting";
+            Sound.good(); poll();
+            setTimeout(function () { if (route === "settings") renderSettings(); }, 2500);
+        }).catch(function () {
+            Sound.bad();
+            out.textContent = "\u274C Could not reach " + host + ". Check the server window is open on the computer, both are on the same WiFi, and Windows Firewall allows it (the server window says how)." +
+                (lanCapable() ? "" : " This app version also blocks it \u2014 update the app.");
+        });
     }
     function toggleRow(icon, title, sub, key) {
         var input = el("input", { type: "checkbox" });

@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.18.0";
+    private static final String BUNDLED_VERSION = "1.19.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -754,6 +754,14 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean findingLocalServer() { return LanDiscovery.busy(); }
+
+        /** Broadcast-only search (about 1.5s, no network scan) for the periodic re-check. */
+        @JavascriptInterface
+        public void findLocalServerQuick() { LanDiscovery.start(false); }
+
+        /** What the last search did, for the Settings screen. */
+        @JavascriptInterface
+        public String localServerReport() { return LanDiscovery.lastReport(); }
 
         @JavascriptInterface
         public int getBattery() {

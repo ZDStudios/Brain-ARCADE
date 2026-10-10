@@ -18,12 +18,15 @@ Pure Python 3 standard library - nothing to pip install. It is a line-by-line
 port of control-server/server.js, so both servers speak exactly the same API.
 """
 import argparse
+import ctypes
 import json
 import mimetypes
 import os
 import random
 import socket
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -41,6 +44,30 @@ ONLINE_MS = 40000
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+# The server window is the place to see what is going on, so it says when a tablet
+# looks for the server and when one connects. (ASCII only: the Windows console
+# cannot always print emoji.)
+try:
+    sys.stdout.reconfigure(errors="replace")
+except Exception:
+    pass
+
+
+def log(msg):
+    print("[%s] %s" % (time.strftime("%H:%M:%S"), msg), flush=True)
+
+
+_seen_probe = {}
+first_connect = [False]
+
+
+def log_once(key, every_s, msg):
+    t = time.time()
+    if t - _seen_probe.get(key, 0) >= every_s:
+        _seen_probe[key] = t
+        log(msg)
 
 
 def resource_dir(name):
@@ -414,6 +441,8 @@ class Handler(BaseHTTPRequestHandler):
     # ---------------------------------------------------------------- API
     def api(self, method, p, q):
         if p == "/api/ping":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                log_once("ping " + self.client_address[0], 30, "A device at %s reached this server" % self.client_address[0])
             # How tablets recognise a Brain Arcade server when they scan the WiFi.
             return self.send(200, {"brainArcade": True, "kind": "local", "name": socket.gethostname(), "version": VERSION})
 
@@ -425,6 +454,9 @@ class Handler(BaseHTTPRequestHandler):
             bat = b.get("battery")
             bat = bat if isinstance(bat, (int, float)) and not isinstance(bat, bool) and bat >= 0 else None
             prev = devices.get(did, {})
+            if not prev or now_ms() - prev.get("lastSeen", 0) > ONLINE_MS:
+                first_connect[0] = True
+                log("Tablet connected: %s (%s, app %s)" % (b.get("name") or "Tablet", self.client_address[0], b.get("app") or "?"))
             games = b.get("games") if isinstance(b.get("games"), list) and b.get("games") else prev.get("games")
             devices[did] = {
                 "id": did, "name": b.get("name") or "Tablet", "app": b.get("app") or "", "lastSeen": now_ms(),
@@ -795,6 +827,7 @@ def discovery_responder(port):
             data, addr = s.recvfrom(1024)
             if data.strip().startswith(DISCOVER_MAGIC):
                 s.sendto(reply, addr)
+                log_once("udp " + addr[0], 60, "A tablet at %s is looking for this server - answered it" % addr[0])
         except Exception:
             time.sleep(0.2)
 
@@ -813,13 +846,99 @@ def lan_ips():
             ips.add(info[4][0])
     except Exception:
         pass
-    return sorted(ip for ip in ips if not ip.startswith("127."))
+    best = None
+    try:
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        u.connect(("10.255.255.255", 1))
+        best = u.getsockname()[0]
+        u.close()
+    except Exception:
+        pass
+    rest = sorted(ip for ip in ips if not ip.startswith("127.") and ip != best)
+    return ([best] if best and not best.startswith("127.") else []) + rest
+
+
+# ================= Windows Firewall =================
+FW = "Brain Arcade Server"
+
+
+def fw_rule_names(port):
+    return ["%s (TCP %d)" % (FW, port), "%s (UDP %d)" % (FW, DISCOVERY_PORT)]
+
+
+def fw_has_rules(port):
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    for name in fw_rule_names(port):
+        try:
+            r = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", "name=" + name],
+                               capture_output=True, text=True, creationflags=flags, timeout=15)
+            if r.returncode != 0:
+                return False
+        except Exception:
+            return False
+    return True
+
+
+def ensure_firewall(port):
+    """On Windows, let tablets in: the 'Allow access' pop-up only covers Private
+    networks, and clicking Cancel on it silently adds BLOCK rules. Asks once
+    for admin (UAC) and adds allow rules for this port + discovery on every
+    network type, after removing any block rules for this program."""
+    if os.name != "nt":
+        return
+    if fw_has_rules(port):
+        log("Windows Firewall: tablets are allowed in.")
+        return
+    exe = sys.executable
+    tcp, udp = fw_rule_names(port)
+    bat = os.path.join(tempfile.gettempdir(), "brain_arcade_firewall.bat")
+    with open(bat, "w", newline="") as f:
+        f.write("@echo off\r\n")
+        f.write('powershell -NoProfile -Command "Get-NetFirewallApplicationFilter -Program \'%s\' -ErrorAction SilentlyContinue | '
+                'Get-NetFirewallRule | Where-Object { $_.Action -eq \'Block\' } | Remove-NetFirewallRule" >nul 2>&1\r\n' % exe)
+        for name in (tcp, udp):
+            f.write('netsh advfirewall firewall delete rule name="%s" >nul 2>&1\r\n' % name)
+        f.write('netsh advfirewall firewall add rule name="%s" dir=in action=allow protocol=TCP localport=%d profile=any >nul\r\n' % (tcp, port))
+        f.write('netsh advfirewall firewall add rule name="%s" dir=in action=allow protocol=UDP localport=%d profile=any >nul\r\n' % (udp, DISCOVERY_PORT))
+    log("Asking Windows to let tablets connect - click YES on the pop-up.")
+    try:
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            subprocess.run(["cmd", "/c", bat], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=60)
+        else:
+            rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", bat, None, None, 0)
+            if rc <= 32:
+                raise OSError("declined")
+            for _ in range(20):
+                time.sleep(1)
+                if fw_has_rules(port):
+                    break
+    except Exception:
+        pass
+    if fw_has_rules(port):
+        log("Windows Firewall: done - tablets are allowed in.")
+    else:
+        log("Windows Firewall was NOT changed, so tablets may be blocked. To fix it:")
+        log("  close this window, right-click BrainArcadeServer.exe > 'Run as administrator' once,")
+        log("  or set your WiFi to 'Private' in Windows Settings > Network.")
+
+
+def troubleshoot_later(port, ips):
+    time.sleep(75)
+    if first_connect[0]:
+        return
+    addr = ips[0] if ips else "this computer's IP"
+    log("No tablet has connected yet. Things to check:")
+    log("  1. The tablet runs Brain Arcade 1.17 or newer (Settings shows 'Use a server on this WiFi').")
+    log("  2. It is on the SAME WiFi as this computer (not a guest network).")
+    log("  3. On the tablet: Settings > Computer's address > type  %s  > Test." % addr)
+    log("  4. If Test fails, the firewall or router is blocking it (see above).")
 
 
 def main():
     ap = argparse.ArgumentParser(description="Brain Arcade local control server")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", DEFAULT_PORT)))
     ap.add_argument("--no-browser", action="store_true", help="do not open the dashboard on start")
+    ap.add_argument("--no-firewall", action="store_true", help="do not touch the Windows Firewall")
     args = ap.parse_args()
 
     load_data()
@@ -844,11 +963,15 @@ def main():
         print("  Dashboard on other devices:  http://%s:%d" % (ip, args.port))
         print("  Play in a browser:           http://%s:%d/play/" % (ip, args.port))
     print()
-    print("  Tablets on this WiFi connect automatically whenever the")
-    print("  Render server is offline. Leave this window open.")
-    print("  If Windows asks, click 'Allow access' so tablets can reach it.")
-    print("  Press Ctrl+C to stop.")
-    print(line)
+    print("  Tablets on this WiFi find this computer by themselves.")
+    if ips:
+        print("  If one does not, type this on the tablet in")
+        print("  Settings > Computer's address:   %s" % (ips[0] if args.port == DEFAULT_PORT else "%s:%d" % (ips[0], args.port)))
+    print("  Leave this window open. Press Ctrl+C to stop.")
+    print(line, flush=True)
+    if not args.no_firewall:
+        threading.Thread(target=ensure_firewall, args=(args.port,), daemon=True).start()
+    threading.Thread(target=troubleshoot_later, args=(args.port, ips), daemon=True).start()
     if not os.path.isdir(GAMES_DIR):
         print("  (the /play/ games bundle was not found at %s)" % GAMES_DIR)
     if not args.no_browser:

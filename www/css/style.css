@@ -1019,3 +1019,4 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .ch-msg { min-height: 2.6em; max-width: 520px; margin: 10px auto 2px; padding: 8px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); text-align: center; font-size: 15px; line-height: 1.4; }
 .diff-group { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 6px 2px -2px; text-align: left; }
 .diff-card.two { background: linear-gradient(135deg, rgba(14,165,233,.22), rgba(236,72,153,.22)); border-color: rgba(56,189,248,.5); }
+.setting-row.warn-row { background: rgba(245,158,11,.12); border-radius: 12px; }

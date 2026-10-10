@@ -21,25 +21,50 @@ A window opens showing the addresses, and the dashboard opens in your browser:
   Play in a browser:           http://192.168.1.20:8787/play/
 ```
 
-**Windows will ask "Allow access?" the first time — click Allow** (private networks).
-Without that the tablets cannot reach the computer. Leave the window open; closing it
-stops the server.
+**On Windows it asks once for admin ("Do you want to allow this app…?") — click Yes.**
+That adds firewall rules so tablets can reach it on any kind of network (Windows' own
+"Allow access" pop-up only covers *Private* networks, and clicking Cancel on it quietly
+blocks the tablets). Leave the window open; closing it stops the server.
+
+The window logs what happens, which is the quickest way to see where it breaks:
+
+```
+[18:02:11] Windows Firewall: done - tablets are allowed in.
+[18:02:40] A tablet at 192.168.1.33 is looking for this server - answered it
+[18:02:41] Tablet connected: Lounge tablet (192.168.1.33, app 1.19.0)
+```
+
+If after a minute no tablet has connected it prints a checklist.
 
 Options: `--port 9000` to use another port, `--no-browser` to not open the dashboard.
 
 ## How the tablets find it
 
-1. The tablet always tries the **Render server first**.
-2. If Render does not answer, the tablet shouts on the WiFi (a UDP broadcast on port
-   **41234**). This server answers with its address.
-3. If the router blocks broadcasts, the tablet instead knocks on port **8787** of every
-   address on the network and keeps the one that answers `/api/ping` as Brain Arcade.
-4. While it is on the WiFi server the status dot next to the title turns **blue**.
-   About once a minute it checks Render again and moves back (dot goes **green**) as
-   soon as Render is up.
+Needs **Brain Arcade 1.17 or newer** on the tablet (the WiFi search is part of the
+Android app, so the over-WiFi game updates cannot add it). Older apps show
+*"Update the app to use a WiFi server"* in Settings with an **Update app** button.
 
-You can switch this off, or search straight away, in the tablet's
-**Settings → Use a server on this WiFi / Look for a WiFi server now**.
+1. About once a minute the tablet shouts on the WiFi (a UDP broadcast on port
+   **41234**). This server answers with its address.
+2. If the router blocks broadcasts, the tablet knocks on port **8787** of every address
+   on the network and keeps the one whose `/api/ping` says it is Brain Arcade.
+3. **A running WiFi server is used first** — even when Render is up — and the status dot
+   next to the title turns **blue**. When the computer's server stops, the tablet goes
+   back to Render (dot **green**) by itself.
+
+Tablet **Settings** has everything to check or fix it:
+
+| Setting | What it does |
+| --- | --- |
+| Use a server on this WiFi | On/off, and shows what the tablet is connected to right now |
+| Prefer the WiFi server | On (default): a running WiFi server always wins. Off: only when Render is down |
+| Computer's address + **Test** | Type the address the server window shows (e.g. `192.168.1.20`). Test says straight away whether the tablet can reach it, and what to check if not |
+| Look for a WiFi server now | Searches immediately and says what it tried |
+
+**Still not connecting?** If *Test* fails with the right address, the computer or router
+is blocking it: run the exe once as administrator, set the WiFi to *Private* in Windows
+network settings, and make sure the tablet is not on a guest network (those keep
+devices apart).
 
 ## What it does
 

@@ -179,9 +179,10 @@ back. Blank it out and the app is 100% local again (no dashboard, no multiplayer
 ## 📡 No Render? Run the server on your computer
 Download **`BrainArcadeServer.exe`** (Windows) or **`BrainArcadeServer-python.zip`**
 from the [latest release](../../releases/tag/brain-arcade-latest) and run it. Every
-tablet on the same WiFi finds it **by itself** when the Render server does not answer —
-no IP addresses to type — and goes back to Render once it is up again. The status dot
-is **green** on Render and **blue** on the WiFi server. It does everything the Render
+tablet on the same WiFi (app 1.17+) finds it **by itself** and uses it while it runs —
+no IP addresses to type — and goes back to Render when it stops. The status dot is
+**green** on Render and **blue** on the WiFi server. Settings has a *Computer's address*
+box with a **Test** button for when the search cannot find it. It does everything the Render
 dashboard does, including the Brain Race multiplayer lobby. Details:
 [`local-server/README.md`](local-server/README.md).
 
