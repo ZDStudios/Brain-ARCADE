@@ -281,6 +281,9 @@ const server = http.createServer(async function (req, res) {
     if (req.method === "OPTIONS") return send(res, 204, "");
 
     // ---- API ----
+    // How tablets recognise a Brain Arcade server (they also probe a local one with it).
+    if (p === "/api/ping") return send(res, 200, { brainArcade: true, kind: "cloud" });
+
     if (p === "/api/heartbeat" && req.method === "POST") {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });

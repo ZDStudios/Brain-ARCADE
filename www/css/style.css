@@ -314,6 +314,7 @@ canvas { display: block; touch-action: none; border-radius: 10px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; vertical-align: middle; background: var(--muted); }
 .status-dot.online { background: var(--good); box-shadow: 0 0 8px var(--good); animation: pulse 2s infinite; }
 .status-dot.offline { background: var(--warn); }
+.status-dot.local { background: #38BDF8; box-shadow: 0 0 8px #38BDF8; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* ===== Text input rows ===== */

@@ -2,5 +2,5 @@
   "versionCode": 25,
   "versionName": "1.16.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
-  "notes": "Brand-new Whack-a-Mole (golden moles, bombs, combos), bigger Memory Match and older games, easier Air Hockey, and Wordle now shows the answer when you run out of guesses."
+  "notes": "If the main server is down, tablets now find and connect to Brain Arcade Server running on a computer on your WiFi \u2014 and switch back automatically when the main server returns."
 }

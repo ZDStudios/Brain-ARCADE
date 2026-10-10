@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     // Where the app checks for a newer APK (self-update).
     private static final String APK_INFO_URL =
             "https://raw.githubusercontent.com/ZDStudios/Brain-ARCADE/main/app-latest.json";
-    private static final String BUNDLED_VERSION = "1.16.0";
+    private static final String BUNDLED_VERSION = "1.17.0";
     private static final String ASSET_INDEX = "file:///android_asset/www/index.html";
 
     private static final String PREF_KIOSK = "kioskEnabled";
@@ -743,6 +743,17 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean isOnline() { return isOnlineInternal(); }
+
+        /** Start looking for a Brain Arcade server on this WiFi (see LanDiscovery). */
+        @JavascriptInterface
+        public void findLocalServer() { LanDiscovery.start(); }
+
+        /** The last server found on this WiFi, e.g. "http://192.168.1.20:8787", or "". */
+        @JavascriptInterface
+        public String localServer() { return LanDiscovery.result(); }
+
+        @JavascriptInterface
+        public boolean findingLocalServer() { return LanDiscovery.busy(); }
 
         @JavascriptInterface
         public int getBattery() {

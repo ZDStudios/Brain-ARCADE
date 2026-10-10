@@ -59,3 +59,7 @@ the Brain Race lobby open on it. Presence expires 20s after the last poll.
 > State is kept in memory, so it resets if the server restarts (fine for the free
 > tier). Set policies again after a restart, or add a database if you need
 > persistence.
+
+
+## Running it at home instead
+The same server as a Python script / Windows `.exe` lives in [`../local-server`](../local-server). Tablets on the same WiFi find it automatically when this Render server is offline.

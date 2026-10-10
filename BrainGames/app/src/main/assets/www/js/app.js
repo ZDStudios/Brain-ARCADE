@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.16.0";
+    var VERSION = "1.17.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -1130,7 +1130,31 @@
         var hasMp = GAMES.some(function (g) { return g.requiresServer; });
         if (hasMp && route === "home") renderHome();
     }
-    function serverUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
+    /* ---- WiFi fallback server ----
+       The Render server stays first choice. When it does not answer, the app looks
+       for a Brain Arcade server running on a computer on the same WiFi
+       (local-server/brain_arcade_server.py or the .exe) and uses that instead, then
+       checks Render again every minute or so and moves back as soon as it is up.
+       Finding the computer is done natively (UDP broadcast, then a scan of the
+       /24), so only the installed app does it. A browser opening the computer's own
+       /play/ page talks to that computer already. */
+    if (settings.lanServer === undefined) settings.lanServer = true;
+    var localUrl = "";          // the WiFi server we are using (or last used)
+    var usingLocal = false;
+    var pollsOnLocal = 0;
+    var lastLanScan = 0;
+    function primaryUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
+    function serverUrl() { return usingLocal && localUrl ? localUrl : primaryUrl(); }
+    function lanCapable() { return !!(window.AndroidBridge && typeof window.AndroidBridge.findLocalServer === "function"); }
+    function lanEnabled() { return settings.lanServer !== false && lanCapable(); }
+    /** Kick off a WiFi search (at most every 20s); the result is read on a later poll. */
+    function scanLan(force) {
+        if (!lanEnabled() || bridgeCall("findingLocalServer", false)) return false;
+        if (!force && Date.now() - lastLanScan < 20000) return false;
+        lastLanScan = Date.now();
+        bridgeCall("findLocalServer", null);
+        return true;
+    }
     function online() {
         try { if (window.AndroidBridge && typeof window.AndroidBridge.isOnline === "function") return !!window.AndroidBridge.isOnline(); } catch (e) {}
         return navigator.onLine !== false;
@@ -1159,9 +1183,9 @@
         if (changed && route === "home") renderHome();
     }
     function poll() {
-        if (!serverUrl()) { setDot("off"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(30000); }
+        if (!lanEnabled()) usingLocal = false;
+        if (!primaryUrl() && !lanEnabled()) { usingLocal = false; setDot("off"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(30000); }
         if (!online()) { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); return schedulePoll(12000); }
-        var ctrl = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
         var body = {
             deviceId: deviceId, name: settings.deviceName || "Tablet", app: VERSION, battery: batteryLevel,
             games: GAMES.map(function (g) {
@@ -1183,15 +1207,47 @@
         };
         if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
         if (pendingFindStopped) { body.findStopped = true; pendingFindStopped = false; }
-        fetch(serverUrl() + "/api/heartbeat", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-            signal: ctrl
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            setDot("online");
+        var payload = JSON.stringify(body);
+        var soon = false;
+        function beat(url) {
+            var signal = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
+            return fetch(url + "/api/heartbeat", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: payload, signal: signal
+            }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        }
+        function ok(data) {
+            setDot(usingLocal ? "local" : "online");
             setServerLive(true);
             applyPolicy(data || {});
-        }).catch(function () { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); }).finally(function () { schedulePoll(streaming ? 4000 : 15000); });
+        }
+        function fail() { setDot("offline"); setGovern(false); setServerLive(false); stopStream(); }
+        // The main server did not answer: is there one on this WiFi?
+        function tryLocal() {
+            var cand = bridgeCall("localServer", "") || "";
+            if (cand) {
+                return beat(cand).then(function (data) {
+                    var was = usingLocal;
+                    localUrl = cand; usingLocal = true; pollsOnLocal = 0;
+                    if (!was) toast("&#128225; Connected to the server on this WiFi");
+                    ok(data);
+                }, function () { usingLocal = false; soon = scanLan(true); fail(); });
+            }
+            usingLocal = false; soon = scanLan(false); fail();
+        }
+        var run;
+        if (usingLocal) {
+            pollsOnLocal++;
+            var local = function () { return beat(localUrl).then(ok, function () { usingLocal = false; return tryLocal(); }); };
+            // About once a minute, check whether the main server is back.
+            run = (primaryUrl() && pollsOnLocal % 4 === 0)
+                ? beat(primaryUrl()).then(function (data) { usingLocal = false; toast("&#9729;&#65039; Back on the main server"); ok(data); }, local)
+                : local();
+        } else if (primaryUrl()) {
+            run = beat(primaryUrl()).then(ok, tryLocal);
+        } else {
+            run = Promise.resolve().then(tryLocal);
+        }
+        run.catch(fail).finally(function () { schedulePoll(streaming ? 4000 : soon ? 4500 : 15000); });
     }
     function applyPolicy(data) {
         var newLocked = !!data.locked;
@@ -1401,7 +1457,7 @@
     function setDot(state) {
         if (!statusDot) return;
         statusDot.className = "status-dot " + state;
-        statusDot.title = state === "online" ? "Connected to control server" : state === "offline" ? "Offline — games still work" : "";
+        statusDot.title = state === "online" ? "Connected to control server" : state === "local" ? "Connected to the server on this WiFi" : state === "offline" ? "Offline — games still work" : "";
         statusDot.style.display = (state === "off") ? "none" : "inline-block";
     }
 
@@ -1880,9 +1936,27 @@
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the dashboard and to other players", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL",
-            serverConnected() ? "Connected \u2705 \u2014 multiplayer is available"
-                              : (serverUrl() ? "Set, but not reachable right now" : "Blank \u2014 no dashboard, no multiplayer"),
+            serverConnected() && !usingLocal ? "Connected \u2705 \u2014 multiplayer is available"
+                              : (primaryUrl() ? "Not reachable right now" + (usingLocal ? " \u2014 using the WiFi server below" : "") : "Blank \u2014 no dashboard, no multiplayer"),
             "serverUrl", defaultServerUrl()));
+        if (lanCapable()) {
+            g4.appendChild(toggleRow("&#128225;", "Use a server on this WiFi",
+                usingLocal && serverConnected() ? "Connected to " + localUrl.replace(/^https?:\/\//, "") + " \u2705"
+                    : "If the main server is down, connect to Brain Arcade Server running on a computer here",
+                "lanServer"));
+            g4.appendChild(el("div", { class: "setting-row" }, [
+                el("div", { class: "s-ico", html: "&#128269;" }),
+                el("div", { class: "s-text" }, [
+                    el("div", { class: "s-title", text: "Look for a WiFi server now" }),
+                    el("div", { class: "s-sub", text: bridgeCall("localServer", "") ? "Last found: " + bridgeCall("localServer", "").replace(/^https?:\/\//, "") : "Start the server on your computer first" })
+                ]),
+                el("button", { class: "btn", text: "Search", onclick: function () {
+                    if (!settings.lanServer) { settings.lanServer = true; save("settings", settings); }
+                    scanLan(true); Sound.click(); toast("Looking for a server on this WiFi\u2026");
+                    setTimeout(function () { poll(); setTimeout(function () { if (route === "settings") renderSettings(); }, 1500); }, 4500);
+                } })
+            ]));
+        }
         // The URL is built in, so getting back to it should not mean typing it out.
         g4.appendChild(el("div", { class: "setting-row" }, [
             el("div", { class: "s-ico", html: "&#127968;" }),

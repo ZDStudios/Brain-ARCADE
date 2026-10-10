@@ -1,0 +1,88 @@
+name: Build Brain Arcade Server (Windows .exe)
+
+# The local server bundles the dashboard and the /play/ games, so rebuild it
+# whenever any of those change.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'local-server/**'
+      - 'control-server/public/**'
+      - 'www/**'
+      - '.github/workflows/local-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller pillow
+
+      - name: Build BrainArcadeServer.exe
+        run: >
+          pyinstaller --onefile --console --name BrainArcadeServer
+          --icon control-server/public/icon-512.png
+          --add-data "control-server/public;public"
+          --add-data "www;www"
+          local-server/brain_arcade_server.py
+
+      - name: Check the exe actually serves the dashboard, the games and the API
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\BrainArcadeServer.exe -ArgumentList "--no-browser","--port","8790" -PassThru
+          Start-Sleep -Seconds 6
+          try {
+            $ping = Invoke-RestMethod http://127.0.0.1:8790/api/ping
+            if (-not $ping.brainArcade) { throw "ping did not identify the server" }
+            $dash = Invoke-WebRequest http://127.0.0.1:8790/ -UseBasicParsing
+            if ($dash.Content -notmatch "Brain Arcade") { throw "dashboard missing" }
+            $play = Invoke-WebRequest http://127.0.0.1:8790/play/js/app.js -UseBasicParsing
+            if ($play.StatusCode -ne 200) { throw "games bundle missing" }
+            $hb = Invoke-RestMethod -Method Post -ContentType "application/json" -Body '{"deviceId":"ci","name":"CI"}' http://127.0.0.1:8790/api/heartbeat
+            $dev = Invoke-RestMethod http://127.0.0.1:8790/api/devices
+            if ($dev.devices[0].name -ne "CI") { throw "heartbeat not recorded" }
+            Write-Host "exe OK"
+          } finally { Stop-Process -Id $p.Id -Force }
+
+      - name: Package the Python version too
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path pkg\BrainArcadeServer | Out-Null
+          Copy-Item local-server\brain_arcade_server.py, local-server\start-server.bat, local-server\start-server.sh, local-server\README.md pkg\BrainArcadeServer\
+          Copy-Item -Recurse control-server\public pkg\BrainArcadeServer\public
+          Copy-Item -Recurse www pkg\BrainArcadeServer\www
+          Compress-Archive -Path pkg\BrainArcadeServer -DestinationPath dist\BrainArcadeServer-python.zip -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrainArcadeServer
+          path: |
+            dist/BrainArcadeServer.exe
+            dist/BrainArcadeServer-python.zip
+
+      - name: Publish to the latest release
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: brain-arcade-latest
+          name: Brain Arcade (latest debug build)
+          files: |
+            dist/BrainArcadeServer.exe
+            dist/BrainArcadeServer-python.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

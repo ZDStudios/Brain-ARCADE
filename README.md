@@ -19,6 +19,7 @@ unknown sources". Games run fully offline.
 | [`BrainGames/`](BrainGames) | The Android app (a WebView shell + the game engine). CI builds the APK from here. |
 | [`www/`](www) | The **over-the-air bundle** the installed app downloads on WiFi to update its games. `manifest.json` drives it. |
 | [`control-server/`](control-server) | Zero-dependency Node dashboard + API to see tablets online, lock them, or restrict games. Deployable to Render. |
+| [`local-server/`](local-server) | The same dashboard + API in pure Python (and a Windows **.exe**) to run on your own computer. Tablets on the WiFi find it automatically when Render is down. |
 | [`.github/workflows/android.yml`](.github/workflows/android.yml) | GitHub Actions — builds the signed debug APK and publishes it to a Release. |
 
 ## 🧊 Cube Recall 3D
@@ -148,6 +149,15 @@ website under `/play/`) uses **its own origin**, so the website and the app alwa
 agree without any configuration. Change it any time in
 **Settings → Control server URL**, or tap **Use the built-in server → Reset** to go
 back. Blank it out and the app is 100% local again (no dashboard, no multiplayer).
+
+## 📡 No Render? Run the server on your computer
+Download **`BrainArcadeServer.exe`** (Windows) or **`BrainArcadeServer-python.zip`**
+from the [latest release](../../releases/tag/brain-arcade-latest) and run it. Every
+tablet on the same WiFi finds it **by itself** when the Render server does not answer —
+no IP addresses to type — and goes back to Render once it is up again. The status dot
+is **green** on Render and **blue** on the WiFi server. It does everything the Render
+dashboard does, including the Brain Race multiplayer lobby. Details:
+[`local-server/README.md`](local-server/README.md).
 
 ## 🔄 How updates work
 The installed app ships with all games bundled (so it works with **no connection**).

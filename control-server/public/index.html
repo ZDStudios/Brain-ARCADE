@@ -109,7 +109,7 @@
 <body>
 <header>
     <span class="mk">&#127918;</span>
-    <h1><span class="brand-txt">Brain Arcade</span> &middot; Control</h1>
+    <h1><span class="brand-txt">Brain Arcade</span> &middot; Control <span id="localBadge" title="This dashboard is the Brain Arcade Server running on a computer on your WiFi" style="display:none;font-size:12px;font-weight:700;vertical-align:middle;padding:3px 10px;border-radius:99px;background:#0EA5E9;color:#fff;margin-left:6px">&#128225; On this WiFi</span></h1>
     <span class="spacer"></span>
     <a class="btn primary play-btn" href="/play/">&#127918; Play games</a>
 </header>
@@ -145,6 +145,7 @@ tokenEl.addEventListener("input", function () { try { localStorage.setItem("ba_a
 
 fetch("/api/config").then(function(r){return r.json();}).then(function(c){
     if (c.authRequired) tokenEl.style.display = "inline-block";
+    if (c.local) document.getElementById("localBadge").style.display = "inline-block";
 });
 
 function token(){ return tokenEl.value.trim(); }
