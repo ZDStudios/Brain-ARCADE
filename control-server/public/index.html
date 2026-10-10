@@ -224,7 +224,7 @@ function wire(){
         var id=b.getAttribute("data-kiosk"), on=b.getAttribute("data-on")==="1";
         var d=lastDevices.filter(function(x){return x.id===id;})[0];
         if(d && d.canKiosk===false){ alert("This device can’t use kiosk mode yet.\n\nKiosk mode is built into the Brain Arcade app (v1.7.0 or newer). Install the latest APK on the device first — the over-the-WiFi game update can’t add it."); return; }
-        if(on && !confirm("Lock this device to Brain Arcade only?\n\nBrain Arcade becomes the home screen, so the tablet always comes back to it. You can still get out — from here, in Settings → Leave Brain Arcade on the device, or with 7 taps in the top-left corner.")) return;
+        if(on && !confirm("Lock this device to Brain Arcade only?\n\nBrain Arcade becomes the home screen, so the tablet always comes back to it. You can still get out — from here, in Settings → Leave Brain Arcade on the device, or via the secret taps on the Settings PIN screen.")) return;
         fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"kiosk",on:on})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent=on?"Kiosk queued ✓":"Exit queued ✓"; }); }; });
     // Ring the tablet so it can be found down the back of the sofa.

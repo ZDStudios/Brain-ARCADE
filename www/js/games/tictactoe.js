@@ -11,7 +11,7 @@
 
             var sScore = stat("Wins", wins + ""), sBest = stat("Best", (api.getBest() || 0) + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sScore.box, sBest.box]));
-            var size = Math.min(api.space().board, 380);
+            var size = Math.min(api.space().board, 560);
             var cellPx = Math.floor(size / 3) - 8;
             var boardEl = api.el("div", { style: "display:grid;grid-template-columns:repeat(3,1fr);gap:8px" });
             host.appendChild(api.el("div", { class: "board-wrap" }, boardEl));

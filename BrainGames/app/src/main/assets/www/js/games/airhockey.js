@@ -10,13 +10,15 @@
             var W = Math.round(Math.min(sp.w, (sp.h - 40) / 1.5, 460)), H = Math.round(W * 1.5);
             var TARGET = 7;
             var BOT = {
-                easy:   { speed: 0.8, react: 0.18, aim: 0.55, attack: 0.45 },
-                medium: { speed: 1.45, react: 0.09, aim: 0.25, attack: 0.75 },
-                hard:   { speed: 2.05, react: 0.04, aim: 0.08, attack: 0.95 }
-            }[api.difficulty] || { speed: 1.45, react: 0.09, aim: 0.25, attack: 0.75 };
+                easy:   { speed: 0.55, react: 0.26, aim: 0.75, attack: 0.3 },
+                medium: { speed: 0.95, react: 0.15, aim: 0.45, attack: 0.55 },
+                hard:   { speed: 1.5,  react: 0.07, aim: 0.18, attack: 0.85 }
+            }[api.difficulty] || { speed: 0.95, react: 0.15, aim: 0.45, attack: 0.55 };
 
-            var MR = W * 0.075, PR = W * 0.045, GOAL = W * 0.40, G0 = (W - GOAL) / 2, G1 = G0 + GOAL;
-            var MAXV = H * 2.4, MALLET_V = H * 4.2;
+            var MR = W * 0.085, PR = W * 0.045;
+            // The bot's goal (top) is wider than yours, so scoring is easier than conceding.
+            var TGOAL = W * 0.5, T0 = (W - TGOAL) / 2, T1 = T0 + TGOAL, GOAL = W * 0.4, G0 = (W - GOAL) / 2, G1 = G0 + GOAL;
+            var MAXV = H * 2.0, MALLET_V = H * 4.2;
             var puck, you, bot, target, pScore, bScore, raf, last = 0, state = "play", pauseT = 0, flash = null, sparks = [], trail = [], botAim = 0, botThink = 0, botAttack = true, stillT = 0;
             var wins = api.load("wins", 0), keys = {};
 
@@ -81,12 +83,9 @@
             function walls() {
                 if (puck.x < PR) { puck.x = PR; if (puck.vx < 0) { puck.vx = -puck.vx * 0.9; bump(); } }
                 if (puck.x > W - PR) { puck.x = W - PR; if (puck.vx > 0) { puck.vx = -puck.vx * 0.9; bump(); } }
-                var inMouth = puck.x > G0 && puck.x < G1;
-                if (!inMouth) {
-                    if (puck.y < PR) { puck.y = PR; if (puck.vy < 0) { puck.vy = -puck.vy * 0.9; bump(); } }
-                    if (puck.y > H - PR) { puck.y = H - PR; if (puck.vy > 0) { puck.vy = -puck.vy * 0.9; bump(); } }
-                }
-                post(G0, 0); post(G1, 0); post(G0, H); post(G1, H);
+                if (!(puck.x > T0 && puck.x < T1) && puck.y < PR) { puck.y = PR; if (puck.vy < 0) { puck.vy = -puck.vy * 0.9; bump(); } }
+                if (!(puck.x > G0 && puck.x < G1) && puck.y > H - PR) { puck.y = H - PR; if (puck.vy > 0) { puck.vy = -puck.vy * 0.9; bump(); } }
+                post(T0, 0); post(T1, 0); post(G0, H); post(G1, H);
                 if (puck.y < -PR * 0.6) goal(true);
                 else if (puck.y > H + PR * 0.6) goal(false);
             }
@@ -140,7 +139,7 @@
                     var t = (homeY - puck.y) / puck.vy; px = puck.x + puck.vx * t;
                     var span = W - 2 * PR; px -= PR; px = ((px % (2 * span)) + 2 * span) % (2 * span); if (px > span) px = 2 * span - px; px += PR;
                 }
-                return { x: clamp(px + botAim * 0.5, G0 - MR * 0.3, G1 + MR * 0.3), y: homeY };
+                return { x: clamp(px + botAim * 0.5, T0 - MR * 0.3, T1 + MR * 0.3), y: homeY };
             }
 
             /* ---------- loop ---------- */
@@ -179,13 +178,13 @@
                 ctx.lineWidth = 3; ctx.strokeStyle = "rgba(244,114,182,0.45)";
                 ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
                 ctx.beginPath(); ctx.arc(W / 2, H / 2, W * 0.16, 0, 7); ctx.stroke();
-                ctx.strokeStyle = "rgba(244,114,182,0.3)"; ctx.beginPath(); ctx.arc(W / 2, 0, GOAL * 0.62, 0, Math.PI); ctx.stroke();
+                ctx.strokeStyle = "rgba(244,114,182,0.3)"; ctx.beginPath(); ctx.arc(W / 2, 0, TGOAL * 0.56, 0, Math.PI); ctx.stroke();
                 ctx.strokeStyle = "rgba(56,189,248,0.3)"; ctx.beginPath(); ctx.arc(W / 2, H, GOAL * 0.62, Math.PI, 2 * Math.PI); ctx.stroke();
                 // goals
-                ctx.fillStyle = "#020617"; ctx.fillRect(G0, 0, GOAL, 7); ctx.fillRect(G0, H - 7, GOAL, 7);
-                ctx.fillStyle = "#F472B6"; ctx.fillRect(G0, 0, GOAL, 3);
+                ctx.fillStyle = "#020617"; ctx.fillRect(T0, 0, TGOAL, 7); ctx.fillRect(G0, H - 7, GOAL, 7);
+                ctx.fillStyle = "#F472B6"; ctx.fillRect(T0, 0, TGOAL, 3);
                 ctx.fillStyle = "#38BDF8"; ctx.fillRect(G0, H - 3, GOAL, 3);
-                ctx.fillStyle = "#E2E8F0"; [[G0, 0], [G1, 0], [G0, H], [G1, H]].forEach(function (p) { ctx.beginPath(); ctx.arc(p[0], p[1], 4, 0, 7); ctx.fill(); });
+                ctx.fillStyle = "#E2E8F0"; [[T0, 0], [T1, 0], [G0, H], [G1, H]].forEach(function (p) { ctx.beginPath(); ctx.arc(p[0], p[1], 4, 0, 7); ctx.fill(); });
                 // trail + puck
                 if (!puck.hidden) {
                     for (var i = 0; i < trail.length; i++) { ctx.globalAlpha = (i + 1) / trail.length * 0.25; ctx.fillStyle = "#FBBF24"; ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, PR * (0.5 + i / trail.length * 0.5), 0, 7); ctx.fill(); }

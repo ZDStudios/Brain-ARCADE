@@ -11,7 +11,7 @@
             var sLast = stat("Last", "—"), sAvg = stat("Avg", "—"), sBest = stat("Best", (api.getBest() || "—") + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sLast.box, sAvg.box, sBest.box]));
 
-            var size = Math.round(Math.min(api.space().w, api.space().h / 1.1, 380));
+            var size = Math.round(Math.min(api.space().w, api.space().h / 1.1, 520));
             // box-sizing:border-box keeps the box exactly size×(size*1.1) in every
             // state — padding used to be added on top of that, and combined with
             // the browser's double-tap-to-zoom gesture (two quick taps: one to
@@ -19,7 +19,7 @@
             // right when it mattered most. touch-action:manipulation below is the
             // real fix for that; box-sizing just keeps the box itself honest.
             var pad = api.el("div", {
-                style: "width:100%;max-width:" + size + "px;height:" + Math.round(size * 1.1) + "px;border-radius:20px;" +
+                style: "width:" + size + "px;max-width:100%;height:" + Math.round(size * 1.1) + "px;border-radius:20px;" +
                     "display:grid;place-items:center;text-align:center;padding:20px;font-weight:800;cursor:pointer;" +
                     "user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;" +
                     "touch-action:manipulation;box-sizing:border-box;transition:background .1s;outline:none",

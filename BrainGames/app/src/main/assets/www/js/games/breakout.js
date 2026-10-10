@@ -6,7 +6,7 @@
         best: "high",
         help: {"emoji":"&#127955;","goal":"Smash every brick with the bouncing ball.","steps":["Drag left and right to move the paddle.","Bounce the ball up to break the bricks.","Don't let the ball fall off the bottom.","Clear all the bricks to reach the next level!"]},
         mount: function (host, api) {
-            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.25, 420)), H = Math.round(W * 1.25);
+            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.25, 600)), H = Math.round(W * 1.25);
             var score, lives, level, bricks, ball, paddle, raf, running, over;
             var COLS = 7, ROWS = 5, bw, bh = 18, pad;
 
@@ -50,7 +50,7 @@
                 // bricks
                 for (var i = 0; i < bricks.length; i++) { var b = bricks[i]; if (!b.alive) continue;
                     if (ball.x > b.x && ball.x < b.x + bw && ball.y - ball.r < b.y + bh && ball.y + ball.r > b.y) {
-                        b.alive = false; ball.dy *= -1; score += b.pts; update(); api.sound.tick(); api.haptic(5); break;
+                        b.alive = false; ball.dy *= -1; score += b.pts; shatter(b); update(); api.sound.tick(); api.haptic(5); break;
                     }
                 }
                 if (bricks.every(function (b) { return !b.alive; })) { level++; score += 100; buildBricks(); launch(); ball.dx *= 1.08; ball.dy *= 1.08; api.sound.win(); }
@@ -60,11 +60,34 @@
                 if (running && !over) step();
                 draw();
             }
+            var bits = [], trail = [];
+            function shatter(b) {
+                for (var i = 0; i < 10; i++) bits.push({ x: b.x + Math.random() * bw, y: b.y + Math.random() * bh, vx: (Math.random() - 0.5) * W * 0.012, vy: (Math.random() - 0.7) * W * 0.012, life: 1, col: b.col });
+            }
             function draw() {
-                ctx.fillStyle = "#0E1428"; ctx.fillRect(0, 0, W, H);
-                bricks.forEach(function (b) { if (!b.alive) return; ctx.fillStyle = b.col; roundRect(b.x + 2, b.y, bw - 4, bh, 5); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(b.x + 2, b.y, bw - 4, 4); });
-                ctx.fillStyle = "#EEF2FF"; roundRect(paddle.x, H - 18, paddle.w, paddle.h, 6); ctx.fill();
-                ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 7); ctx.fillStyle = "#FBBF24"; ctx.fill();
+                var g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#1E1B4B"); g.addColorStop(1, "#0B1022");
+                ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+                bricks.forEach(function (b) {
+                    if (!b.alive) return;
+                    ctx.shadowColor = b.col; ctx.shadowBlur = 8;
+                    ctx.fillStyle = b.col; roundRect(b.x + 2, b.y, bw - 4, bh, 5); ctx.fill(); ctx.shadowBlur = 0;
+                    ctx.fillStyle = "rgba(255,255,255,0.35)"; roundRect(b.x + 5, b.y + 2, bw - 10, bh * 0.32, 3); ctx.fill();
+                    ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fillRect(b.x + 4, b.y + bh - 3, bw - 8, 3);
+                });
+                for (var i = bits.length - 1; i >= 0; i--) {
+                    var p = bits[i]; p.x += p.vx; p.y += p.vy; p.vy += W * 0.0006; p.life -= 0.03;
+                    if (p.life <= 0) { bits.splice(i, 1); continue; }
+                    ctx.globalAlpha = p.life; ctx.fillStyle = p.col; ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+                }
+                ctx.globalAlpha = 1;
+                ctx.shadowColor = "#A5B4FC"; ctx.shadowBlur = 14;
+                var pg = ctx.createLinearGradient(0, H - 18, 0, H - 18 + paddle.h); pg.addColorStop(0, "#FFFFFF"); pg.addColorStop(1, "#A5B4FC");
+                ctx.fillStyle = pg; roundRect(paddle.x, H - 18, paddle.w, paddle.h, 6); ctx.fill(); ctx.shadowBlur = 0;
+                trail.push({ x: ball.x, y: ball.y }); if (trail.length > 8) trail.shift();
+                for (var t = 0; t < trail.length; t++) { ctx.globalAlpha = t / trail.length * 0.3; ctx.beginPath(); ctx.arc(trail[t].x, trail[t].y, ball.r * (t / trail.length), 0, 7); ctx.fillStyle = "#FBBF24"; ctx.fill(); }
+                ctx.globalAlpha = 1;
+                ctx.shadowColor = "#FBBF24"; ctx.shadowBlur = 12;
+                ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 7); ctx.fillStyle = "#FDE68A"; ctx.fill(); ctx.shadowBlur = 0;
             }
             function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
             function gameOver() { over = true; var rec = api.setBest(score); api.sound.lose();

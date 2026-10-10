@@ -6,7 +6,7 @@
         best: "high", bestLabel: "Wins",
         help: {"emoji":"&#127955;","goal":"Beat the computer to 7 points.","steps":["Drag left and right to move your paddle.","Bounce the ball back at the computer.","Score when the computer misses the ball.","First one to 7 points wins!"]},
         mount: function (host, api) {
-            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.35, 420)), H = Math.round(W * 1.35);
+            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.35, 600)), H = Math.round(W * 1.35);
             var ball, pw, ph, player, ai, pScore, aiScore, raf, running, wins = api.load("wins", 0), roundOver;
 
             var sYou = stat("You", "0"), sCpu = stat("CPU", "0"), sBest = stat("Best", (api.getBest() || 0) + "");
@@ -57,12 +57,22 @@
                     api.overlay({ emoji: "&#129302;", title: "CPU wins", sub: pScore + " – " + aiScore, buttons: [ { label: "Home", onClick: api.exit }, { label: "Rematch", primary: true, onClick: reset } ] }); }
             }
             function loop() { raf = requestAnimationFrame(loop); if (running) step(); draw(); }
+            var trail = [];
             function draw() {
-                ctx.fillStyle = "#0E1428"; ctx.fillRect(0, 0, W, H);
-                ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.setLineDash([8, 10]); ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke(); ctx.setLineDash([]);
-                ctx.fillStyle = "#F472B6"; roundRect(ai, 6, pw, ph, 6); ctx.fill();
-                ctx.fillStyle = "#22D3EE"; roundRect(player, H - ph - 6, pw, ph, 6); ctx.fill();
-                ctx.fillStyle = "#FBBF24"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 7); ctx.fill();
+                var g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#2A1036"); g.addColorStop(0.5, "#0E1428"); g.addColorStop(1, "#06283D");
+                ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+                ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2; ctx.setLineDash([10, 10]); ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke(); ctx.setLineDash([]);
+                ctx.beginPath(); ctx.arc(W / 2, H / 2, W * 0.12, 0, 7); ctx.stroke();
+                ctx.font = "900 " + Math.round(W * 0.2) + "px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "rgba(255,255,255,0.06)";
+                ctx.fillText(aiScore, W / 2, H * 0.27); ctx.fillText(pScore, W / 2, H * 0.73);
+                ctx.shadowBlur = 16;
+                ctx.shadowColor = "#F472B6"; ctx.fillStyle = "#F472B6"; roundRect(ai, 6, pw, ph, 6); ctx.fill();
+                ctx.shadowColor = "#22D3EE"; ctx.fillStyle = "#22D3EE"; roundRect(player, H - ph - 6, pw, ph, 6); ctx.fill();
+                ctx.shadowBlur = 0;
+                if (!roundOver) { trail.push({ x: ball.x, y: ball.y }); if (trail.length > 8) trail.shift(); } else trail = [];
+                for (var t = 0; t < trail.length; t++) { ctx.globalAlpha = t / trail.length * 0.3; ctx.beginPath(); ctx.arc(trail[t].x, trail[t].y, ball.r * (t / trail.length), 0, 7); ctx.fillStyle = "#FBBF24"; ctx.fill(); }
+                ctx.globalAlpha = 1; ctx.shadowColor = "#FBBF24"; ctx.shadowBlur = 14;
+                ctx.fillStyle = "#FDE68A"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
             }
             function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 

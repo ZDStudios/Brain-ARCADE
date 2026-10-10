@@ -11,8 +11,9 @@
 
             var sMoves = stat("Moves", "0"), sTime = stat("Time", "0s"), sBest = stat("Best", (api.getBest() || "—") + "");
             host.appendChild(api.el("div", { class: "game-topline" }, [sMoves.box, sTime.box, sBest.box]));
-            var grid = api.el("div", { style: "display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:" + Math.min(api.space().board, 380) + "px;width:100%" });
-            host.appendChild(api.el("div", { class: "board-wrap" }, grid));
+            var sp = api.space(), gw = Math.round(Math.min(sp.w + 28, sp.h * 0.97, sp.isTV ? 720 : 700));
+            var grid = api.el("div", { class: "mm-grid", style: "width:" + gw + "px;font-size:" + Math.round(gw / 4 * 0.5) + "px" });
+            host.appendChild(grid);
             host.appendChild(api.el("div", { class: "small-note", text: "Flip two cards to find matching pairs." }));
             host.appendChild(api.el("div", { class: "btn-row" }, [ api.el("button", { class: "btn", text: "New game", onclick: reset }) ]));
 
@@ -33,12 +34,13 @@
                 sMoves.val.textContent = String(moves); sTime.val.textContent = time + "s";
                 grid.innerHTML = ""; cards = [];
                 faces.forEach(function (e, i) {
-                    var card = api.el("div", { style: cardStyle(false), html: "?" });
+                    var card = api.el("button", { class: "mm-card", "aria-label": "Card " + (i + 1) },
+                        api.el("div", { class: "mm-inner" }, [api.el("div", { class: "mm-back" }, api.el("span", { html: "&#129504;" })), api.el("div", { class: "mm-face", html: e })]));
                     card._e = e; card._flipped = false; card._done = false;
                     card.addEventListener("click", function () { flip(card); });
                     cards.push(card); grid.appendChild(card);
                     // Pairs already found stay face-up across a restart.
-                    if (doneFlags[i]) { card._done = true; show(card, true); }
+                    if (doneFlags[i]) { card._done = true; show(card, true); card.classList.add("done"); }
                 });
                 saveNow();
                 timer = setInterval(function () { time++; sTime.val.textContent = time + "s"; saveNow(); }, 1000);
@@ -51,22 +53,21 @@
                     moves: moves, matched: matched, time: time
                 });
             }
-            function cardStyle(open) {
-                return "aspect-ratio:1;display:grid;place-items:center;font-size:30px;border-radius:12px;cursor:pointer;transition:transform .15s;" +
-                    (open ? "background:linear-gradient(135deg,#1E2748,#2A3560);border:2px solid var(--accent)" : "background:linear-gradient(135deg,#6366F1,#0EA5E9);border:2px solid transparent;color:transparent");
-            }
-            function show(card, open) { card.style.cssText = cardStyle(open); card.innerHTML = open ? card._e : "?"; card._flipped = open; }
+            function show(card, open) { card.classList.toggle("open", open); card._flipped = open; }
             function flip(card) {
                 if (lock || card._flipped || card._done) return;
                 show(card, true); api.sound.tick();
                 if (!first) { first = card; return; }
                 moves++; sMoves.val.textContent = moves;
                 if (first._e === card._e) {
-                    first._done = card._done = true; matched++; first = null; api.sound.pop(); api.haptic(10); saveNow();
+                    first._done = card._done = true; matched++; api.sound.pop(); api.haptic(10); saveNow();
+                    var pa = first, pb = card; first = null;
+                    setTimeout(function () { pa.classList.add("done"); pb.classList.add("done"); }, 320);
                     if (matched === EMOJI.length) win();
                 } else {
                     lock = true; var a = first, b = card; first = null;
-                    setTimeout(function () { show(a, false); show(b, false); lock = false; api.sound.bad(); }, 700);
+                    setTimeout(function () { a.classList.add("nope"); b.classList.add("nope"); }, 380);
+                    setTimeout(function () { a.classList.remove("nope"); b.classList.remove("nope"); show(a, false); show(b, false); lock = false; api.sound.bad(); }, 850);
                 }
             }
             function win() {

@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.15.0";
+    var VERSION = "1.16.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -597,6 +597,8 @@
     function setBest(id, value, mode) {
         var cur = getBest(id);
         var better = cur == null || (mode === "low" ? value < cur : value > cur);
+        // A score of 0 is not a record — no "New best!" confetti for crashing straight away.
+        if (mode !== "low" && !(value > 0)) better = false;
         if (better) {
             save(bestKey(id), value);
             addXp(25);              // beating a record is worth more
@@ -715,8 +717,11 @@
         var entered = "";
         var ov = el("div", { class: "overlay" });
         var panel = el("div", { class: "panel pop pin-panel" });
-        panel.appendChild(el("div", { class: "big", html: "&#128274;" }));
+        var lock = el("div", { class: "big pin-lock", html: "&#128274;" });
+        panel.appendChild(lock);
         panel.appendChild(el("h2", { text: "Grown-ups only" }));
+        // Secret way to the kiosk panel: spam-tap the lock, then spam-tap the "Ha ha" pop-up.
+        spamTap(lock, 6, function () { haHa(function () { close(); openKioskAdmin(); }); });
         panel.appendChild(el("p", { class: "small-note", style: "margin:0 0 14px", text: "Enter the adult PIN to open Settings." }));
         var dots = el("div", { class: "pin-dots" });
         var dotEls = [];
@@ -782,6 +787,32 @@
             document.removeEventListener("keydown", onKey, true);
             if (ov.parentNode) ov.parentNode.removeChild(ov);
         }
+    }
+
+    /** Calls done() after `need` quick taps on node (each within 650ms of the last). */
+    function spamTap(node, need, done) {
+        var n = 0, t = null;
+        node.addEventListener("pointerdown", function (ev) {
+            ev.preventDefault();
+            n++; clearTimeout(t); t = setTimeout(function () { n = 0; }, 650);
+            node.classList.remove("wiggle"); void node.offsetWidth; node.classList.add("wiggle");
+            if (n >= need) { n = 0; clearTimeout(t); done(); }
+        });
+    }
+    /** The "Ha ha" pop-up in the secret route. Spam-tap it to get through; it fades on its own if left alone. */
+    function haHa(onThrough) {
+        var ov = el("div", { class: "overlay haha-overlay" });
+        var bubble = el("div", { class: "panel pop haha" }, [
+            el("div", { class: "big", html: "&#128540;" }),
+            el("h2", { text: "Ha ha!" }),
+            el("p", { class: "small-note", style: "margin:0", text: "Nice try…" })
+        ]);
+        ov.appendChild(bubble); document.body.appendChild(ov);
+        Sound.pop(); haptic(10);
+        var idle = setTimeout(close, 5000);
+        ov.addEventListener("pointerdown", function () { clearTimeout(idle); idle = setTimeout(close, 5000); });
+        spamTap(bubble, 6, function () { close(); Sound.good(); haptic(20); onThrough(); });
+        function close() { clearTimeout(idle); if (ov.parentNode) ov.parentNode.removeChild(ov); }
     }
 
     /* ============================================================
@@ -929,23 +960,10 @@
         btns.appendChild(el("button", { class: "btn ghost", style: "width:100%", text: "Close", onclick: function () { close(); } }));
         panel.appendChild(btns);
         panel.appendChild(el("p", { class: "small-note", style: "text-align:left;margin:12px 0 0",
-            text: "Shortcut: 7 quick taps in the top-left corner opens this panel from anywhere." }));
+            text: "Shortcut: Settings → keep tapping the 🔒 on the PIN screen, then keep tapping the “Ha ha” pop-up." }));
         ov.appendChild(panel); document.body.appendChild(ov);
         function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
     }
-    // Shortcut to the kiosk panel: 7 quick taps in the top-left corner.
-    // No PIN — Settings is reachable normally now.
-    function installCornerGesture() {
-        var taps = 0, timer = null;
-        document.addEventListener("pointerdown", function (ev) {
-            if (ev.clientX > 96 || ev.clientY > 96) { taps = 0; clearTimeout(timer); return; }
-            taps++;
-            clearTimeout(timer);
-            timer = setTimeout(function () { taps = 0; }, 2500);
-            if (taps >= 7) { taps = 0; openKioskAdmin(); }
-        }, true);
-    }
-
     /* ---------- game on/off manager ---------- */
     function openGameManager() {
         var ov = el("div", { class: "overlay" });
@@ -2059,7 +2077,6 @@
         renderLock();
         // Remote / D-pad navigation + the hidden kiosk escape gesture.
         document.addEventListener("keydown", onNavKey, false);
-        installCornerGesture();
         ensureFocusable();
         startNavWatcher();
         if (tvActive()) setTimeout(focusFirst, 120);

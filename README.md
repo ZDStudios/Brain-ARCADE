@@ -93,12 +93,22 @@ puzzle uses S, so it never turns into a plurals hunt. Progress on each hive is k
 **Pipe Flow** boards are built from a random spanning tree rooted at the tap and then
 scrambled, so every board has a solution that uses every pipe with no leaks.
 
+## 🔨 Whack-a-Mole
+Rebuilt from scratch: a big grassy board that fills the screen, moles drawn in CSS that
+really rise out of their holes (and go cross-eyed when bopped), **golden moles** worth 3,
+**bombs** that cost 2 and shake the board, a combo meter (**x2** at 5 in a row, **x3** at
+10), a hammer swing on every tap, a 3-2-1 countdown and a timer bar that turns red for
+the last five seconds. More moles pop up at once as the round goes on. Number keys 1–9
+work as the holes on a keyboard or remote.
+
 ## 🏒 Air Hockey
 You against a bot on a glowing rink. Drag your blue mallet anywhere in your half (it
 cannot cross the centre line), smash the puck off the walls and into the bot's goal at
 the top — first to 7 wins. The puck has real physics: it keeps the speed of your swing,
 bounces off the side walls and goal posts and slowly glides to a stop.
 
+- The bot's goal is wider than yours and the puck tops out a little slower, so it is
+  easier to score than to concede.
 - **Easy / Medium / Hard** change how fast the bot moves, how quickly it reacts and how
   often it comes forward to attack instead of guarding its goal.
 - After a goal the puck is placed in the half of whoever conceded, like the real game.
@@ -177,8 +187,11 @@ TV remote). The keypad appears **every** time Settings is opened — an unlock t
 lasted the whole session meant handing the tablet over after changing one setting left
 Settings wide open. Nothing re-prompts while you are already inside Settings.
 
-Only Settings is gated. The 7-tap kiosk escape is deliberately **not** behind the PIN —
-a PIN in front of the way out is what made this annoying the first time round.
+Only Settings is gated. The kiosk escape is deliberately **not** behind the PIN — a PIN in
+front of the way out is what made this annoying the first time round. It is hidden on the
+PIN screen instead: spam-tap the 🔒, then spam-tap the “Ha ha!” that pops up. (The old
+7-taps-on-the-battery shortcut is gone — kids kept finding it.) Leave the “Ha ha!” alone
+and it disappears after five seconds.
 
 ### Getting out
 Three ways:
@@ -187,7 +200,7 @@ Three ways:
 | --- | --- |
 | **Settings → Kiosk mode** switch | Flips kiosk off. If Android still points Home at Brain Arcade it opens the Home-app picker so the change sticks; otherwise it just confirms you're unlocked and offers to leave now. |
 | **Settings → Leave Brain Arcade** | Steps straight out to your normal launcher **without** changing kiosk mode. With kiosk on, the Home button brings the tablet right back — handy for a quick trip to another app. |
-| **7 quick taps in the top-left corner** | Opens the kiosk admin panel from anywhere; it has both of the above. |
+| **Secret tap route** | Tap ⚙️ Settings, then keep tapping the 🔒 on the *Grown-ups only* PIN screen. A “Ha ha!” pop-up appears — keep tapping that too and the kiosk admin panel opens (it has both of the above). |
 
 The dashboard mirrors this: **Kiosk mode / Exit kiosk** toggles the setting, and
 **🚪 Let them out** sends the tablet to its home screen while leaving kiosk on.

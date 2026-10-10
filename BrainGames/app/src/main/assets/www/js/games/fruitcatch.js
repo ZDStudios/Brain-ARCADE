@@ -10,7 +10,7 @@
             "Watch out — catching a bomb loses a life!",
             "You have 3 lives. Miss fruit is okay, but don't run out of lives." ] },
         mount: function (host, api) {
-            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.25, 420)), H = Math.round(W * 1.25);
+            var sp = api.space(), W = Math.round(Math.min(sp.w, sp.h / 1.25, 600)), H = Math.round(W * 1.25);
             var FRUITS = ["🍎","🍌","🍉","🍓","🍑","🍇","🍊","🍍"];
             var score, lives, items, basket, raf, over, spawnAcc, last, speed;
 

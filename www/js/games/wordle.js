@@ -115,7 +115,7 @@
                 if (done) return;
                 api.saveState({ target: target, guesses: guesses.slice(), streak: streak,
                                 hintsLeft: hintsLeft, hintCells: hintCells.slice(),
-                                typed: letters[row].join("") });
+                                typed: row < 6 ? letters[row].join("") : "" });
             }
 
             function press(k) {
@@ -178,8 +178,13 @@
                         if (row < 6) applyHintsToRow();
                         saveNow();
                         if (row >= 6) { done = true; api.clearState(); streak = 0; api.save("streak", 0); sStreak.val.textContent = 0; api.sound.lose();
-                            api.overlay({ emoji: "&#128533;", title: "Out of guesses", sub: "The word was <b>" + target + "</b>",
-                                buttons: [ { label: "Home", onClick: api.exit }, { label: "Try again", primary: true, onClick: reset } ] }); }
+                            // Show the answer big and clear, so a missed word still teaches something.
+                            var tilesHtml = target.split("").map(function (ch, k) { return "<span style=\"animation-delay:" + (k * 0.12) + "s\">" + ch + "</span>"; }).join("");
+                            setTimeout(function () {
+                                api.overlay({ emoji: "&#128533;", title: "Out of guesses",
+                                    sub: "The answer was<div class=\"wd-reveal\">" + tilesHtml + "</div>Nearly! A new word is ready when you are.",
+                                    buttons: [ { label: "Home", onClick: api.exit }, { label: "New word", primary: true, onClick: reset } ] });
+                            }, 450); }
                     }
                 }
             }
