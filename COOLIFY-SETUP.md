@@ -18,31 +18,32 @@
 4. **Port:** `3000`
 5. **Persistent Storage:** add a volume with **Destination Path** `/data`
    (this keeps tablet locks, allowed games and score backups when you redeploy)
-6. **Environment Variables** (optional):
-   - `ADMIN_TOKEN` = a password. The dashboard then asks for it before anyone can lock a
-     tablet or change its games. Skip this for no password.
-7. **Domain:** enter your domain, e.g. `https://arcade.yourdomain.com`.
-   Coolify sets up HTTPS by itself.
+6. **Environment Variables:**
+   - `ADMIN_TOKEN` = your dashboard password (pick a long one). The dashboard asks for
+     it before showing *anything*. If you skip this, the server makes one up and prints
+     it in Coolify's **Logs** tab — look for "the dashboard password is".
+7. **Domain:** `https://brainarcade.zdstudios.network`. Coolify sets up HTTPS by itself; keep
+   **Force HTTPS** switched on.
 8. Click **Deploy**.
 
 ## Check it worked
 
-- Open your domain in a browser. You should see the **Brain Arcade · Control** dashboard.
-- Open `https://your-domain/api/ping`. It should show `{"brainArcade":true,...}`.
-- Open `https://your-domain/play/` to play the games in the browser.
+- Open https://brainarcade.zdstudios.network in a browser. You should see a **sign-in** screen;
+  enter the password and the **Brain Arcade · Control** dashboard appears.
+- Open https://brainarcade.zdstudios.network/api/ping. It should show `{"brainArcade":true,...}`.
+- Open https://brainarcade.zdstudios.network/play/ to play the games in the browser.
 
-## Then send Claude the URL
+## The app already points here
 
-Send me the final URL, e.g. `https://arcade.yourdomain.com`. I'll change the app's
-built-in server address from Render to yours and ship an update, so new installs and
-the WiFi update both use it.
-
-Until then, on any tablet you can type the new URL in
-**Settings → Control server URL**.
+The app's built-in server is now https://brainarcade.zdstudios.network. Tablets that were on the
+old Render address switch over by themselves after the next update.
 
 ## If something goes wrong
 
 - **Deploy fails:** copy the build log from Coolify and send it to me.
-- **Dashboard loads but no tablets show up:** the tablet is still pointing at Render.
-  Type the new URL in the tablet's Settings, or wait for my update.
+- **Dashboard loads but no tablets show up:** the tablet has not had the update yet.
+  Type https://brainarcade.zdstudios.network in the tablet's Settings → Control server URL.
+- **Forgot the password:** set a new `ADMIN_TOKEN` in Coolify and redeploy.
+- **A tablet says the server doesn't recognise it** (after a reset): tap **Re-pair** on
+  its card in the dashboard.
 - **Data disappears after a redeploy:** the `/data` volume isn't set up (step 5).

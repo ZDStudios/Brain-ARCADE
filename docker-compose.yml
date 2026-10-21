@@ -10,16 +10,20 @@ services:
     restart: unless-stopped
     init: true
     environment:
-      # Set a password to require it for lock/allow changes (leave unset for none).
+      # Dashboard password: needed for EVERYTHING on the dashboard. Set your own;
+      # if left empty a strong one is generated, kept in /data and printed in the log.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       PORT: "3000"
       DATA_DIR: /data
     volumes:
       # Keeps device locks, allow-lists and score backups across redeploys.
       - brain-arcade-data:/data
-    ports:
-      # Coolify usually sets its own proxy; this is for a plain `docker compose up`.
-      - "3000:3000"
+    # Not published to the internet on purpose: Coolify's proxy reaches it on its
+    # private network and adds HTTPS, so all traffic is encrypted. (Publishing
+    # 3000 would let anyone skip HTTPS.) For a plain `docker compose up` on a
+    # machine without a proxy, replace `expose` with  ports: ["3000:3000"].
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/ping"]
       interval: 30s

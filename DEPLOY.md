@@ -19,9 +19,11 @@ This repo ships a `Dockerfile` and a `docker-compose.yml` at the root, ready for
 4. **Persistent Storage:** add a volume mounted at **`/data`**. This keeps device locks,
    allow-lists and score backups across redeploys. (Without it the server still runs,
    just forgetting those on each redeploy — the same as the old Render free tier.)
-5. **Environment variables** (optional):
-   - `ADMIN_TOKEN` — set a password and the dashboard will require it before it can
-     lock a tablet or change its games. Leave unset for no password.
+5. **Environment variables:**
+   - `ADMIN_TOKEN` — **the dashboard password** (recommended: set a long one). It is
+     needed for *everything* on the dashboard, including just viewing the tablets, their
+     screens and photos. If you leave it unset the server generates a strong password,
+     keeps it in `/data`, and prints it in the **Logs** tab when it starts.
    - `DATA_DIR` — already set to `/data` by the Dockerfile; only change it if you mount
      the volume somewhere else.
 6. Give it your **domain** (e.g. `arcade.example.com`) and deploy. Coolify gets the
@@ -55,20 +57,23 @@ docker run -d --name brain-arcade -p 3000:3000 \
 ADMIN_TOKEN=yourpassword DATA_DIR=/var/lib/brain-arcade node control-server/server.js
 ```
 
-## After it is live — point the app at it
+## The live server
 
-Once you have the URL (e.g. `https://arcade.example.com`), the app and website should
-default to it instead of the old Render address. Change **one** constant and the
-default flows everywhere:
+The app and website point at **https://brainarcade.zdstudios.network** (`DEFAULT_SERVER_URL` in
+`BrainGames/app/src/main/assets/www/js/app.js`). Tablets that were still on the old
+Render address move to it by themselves.
 
-- `BrainGames/app/src/main/assets/www/js/app.js` → `DEFAULT_SERVER_URL`
+## Security
 
-Then rebuild the bundle (`www/`) and ship a new app version, so fresh installs and the
-over-WiFi update both point at the new server. Tablets already set up can also just type
-the new URL in **Settings → Control server URL**. (The WiFi-server fallback is
-unaffected — that is found on the local network and does not use this URL.)
-
-> Tell Claude the final URL and it will make this change and ship it.
+- All traffic is HTTPS (Coolify's proxy). The compose file deliberately does **not**
+  publish port 3000, so nobody can skip HTTPS by talking to the container directly.
+  In Coolify, keep **Force HTTPS** on for the domain.
+- Every dashboard request needs `ADMIN_TOKEN` (sent as the `X-Admin-Token` header).
+  Ten wrong passwords from one address lock it out for 10 minutes.
+- Each tablet is given its own secret key on first contact and must send it with every
+  request after that. Only a hash is stored (in `/data`). A reset tablet shows up on the
+  dashboard with a **Re-pair** button.
+- `OPEN_DASHBOARD=1` turns the password off. Never use it on the internet.
 
 ## Notes
 

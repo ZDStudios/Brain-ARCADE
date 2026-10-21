@@ -112,6 +112,19 @@
       input.token { width:100%; }
       .tools .muted { flex-basis:100%; }
     }
+    /* ===== sign-in ===== */
+    .login { position:fixed; inset:0; z-index:100; display:grid; place-items:center; padding:20px;
+        background:radial-gradient(800px 500px at 50% 10%, rgba(124,92,255,.25), transparent), #070B16; }
+    .login[hidden] { display:none; }
+    .login .card { width:100%; max-width:360px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:26px 22px; text-align:center; }
+    .login h2 { margin:6px 0 4px; font-size:22px; }
+    .login p { color:var(--muted); margin:0 0 16px; font-size:14px; }
+    .login input { width:100%; box-sizing:border-box; margin-bottom:12px; }
+    .login .err { color:#F87171; min-height:18px; font-size:13px; margin:-4px 0 10px; }
+    .login .lock { font-size:44px; }
+    .login .mini { margin-top:14px; }
+    .pairbadge { font-size:12px; padding:3px 9px; border-radius:20px; background:#14532D; color:#fff; }
+    .rejected { margin:8px 0 2px; padding:8px 10px; border-radius:12px; background:rgba(245,158,11,.15); font-size:13px; }
 </style>
 </head>
 <body>
@@ -119,8 +132,20 @@
     <span class="mk">&#127918;</span>
     <h1><span class="brand-txt">Brain Arcade</span> &middot; Control <span id="localBadge" title="This dashboard is the Brain Arcade Server running on a computer on your WiFi" style="display:none;font-size:12px;font-weight:700;vertical-align:middle;padding:3px 10px;border-radius:99px;background:#0EA5E9;color:#fff;margin-left:6px">&#128225; On this WiFi</span></h1>
     <span class="spacer"></span>
+    <button class="btn" id="signOut" style="display:none">Sign out</button>
     <a class="btn primary play-btn" href="/play/">&#127918; Play games</a>
 </header>
+<div class="login" id="login" hidden>
+    <form class="card" id="loginForm" autocomplete="on">
+        <div class="lock">&#128274;</div>
+        <h2>Brain Arcade Control</h2>
+        <p>Enter the dashboard password.</p>
+        <input class="token" id="loginPass" type="password" placeholder="Password" autocomplete="current-password" autocapitalize="off" autocorrect="off" />
+        <div class="err" id="loginErr"></div>
+        <button class="btn primary" style="width:100%" type="submit">Sign in</button>
+        <div class="mini">The password is the <b>ADMIN_TOKEN</b> set on the server. If you did not set one, the server printed one in its log when it started.</div>
+    </form>
+</div>
 <div class="wrap">
     <div class="tools">
         <span class="muted" id="checkinNote">Devices check in every ~15s. Changes apply on their next check-in.</span>
@@ -146,13 +171,64 @@ function gamesFor(d){
 }
 var draft = {}; // deviceId -> {locked, allowedGames}
 
+/* ===== sign-in =====
+   Every request to /api/ carries the password (X-Admin-Token) over HTTPS. If the
+   server says 401 the sign-in screen comes back; nothing about the tablets is shown
+   until the password is right. "Sign out" forgets it in this browser. */
 var tokenEl = document.getElementById("token");
-// Remember the admin token in this browser so you only enter it once.
-try { tokenEl.value = localStorage.getItem("ba_admin_token") || ""; } catch (e) {}
-tokenEl.addEventListener("input", function () { try { localStorage.setItem("ba_admin_token", tokenEl.value.trim()); } catch (e) {} });
+var adminToken = "";
+try { adminToken = localStorage.getItem("ba_admin_token") || ""; } catch (e) {}
+tokenEl.value = adminToken;
+function setToken(t){ adminToken=t||""; tokenEl.value=adminToken; try { if(adminToken) localStorage.setItem("ba_admin_token", adminToken); else localStorage.removeItem("ba_admin_token"); } catch (e) {} }
+var authOn = true, signedIn = false;
+var rawFetch = window.fetch.bind(window);
+window.fetch = function(url, opts){
+    var u = String(url);
+    if (u.indexOf("/api/") === 0 && u.indexOf("/api/config") !== 0) {
+        opts = opts || {};
+        var h = {}; var src = opts.headers || {};
+        Object.keys(src).forEach(function(k){ h[k]=src[k]; });
+        if (adminToken) h["X-Admin-Token"] = adminToken;
+        opts = Object.assign({}, opts, { headers: h });
+        return rawFetch(url, opts).then(function(r){
+            if (r.status === 401 && authOn) showLogin(adminToken ? "That password is not right (or it was changed)." : "");
+            if (r.status === 429) showLogin("Too many wrong passwords. Wait a few minutes and try again.");
+            return r;
+        });
+    }
+    return rawFetch(url, opts);
+};
+function showLogin(msg){
+    var box = document.getElementById("login");
+    if (!box.hidden && !signedIn) { if (msg) document.getElementById("loginErr").textContent = msg; return; }
+    signedIn = false;
+    if (typeof remote !== "undefined" && remote) closeRemote();
+    if (typeof photoView !== "undefined" && photoView) closePhoto();
+    document.getElementById("login").hidden = false;
+    document.getElementById("loginErr").textContent = msg || "";
+    document.getElementById("list").innerHTML = "";
+    setTimeout(function(){ var i=document.getElementById("loginPass"); if(i) i.focus(); }, 50);
+}
+function hideLogin(){ document.getElementById("login").hidden = true; signedIn = true; }
+document.getElementById("loginForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var t = document.getElementById("loginPass").value.trim();
+    if (!t) return;
+    var err = document.getElementById("loginErr"); err.textContent = "Checking\u2026";
+    rawFetch("/api/auth/check", { headers: { "X-Admin-Token": t } }).then(function(r){ r.text().catch(function(){});
+        if (r.ok) { setToken(t); document.getElementById("loginPass").value=""; hideLogin(); poll(); return; }
+        err.textContent = r.status === 429 ? "Too many wrong passwords. Wait a few minutes and try again." : "That password is not right.";
+    }).catch(function(){ err.textContent = "Could not reach the server."; });
+});
+document.getElementById("signOut").onclick = function(){ setToken(""); showLogin(""); };
 
 fetch("/api/config").then(function(r){return r.json();}).then(function(c){
-    if (c.authRequired) tokenEl.style.display = "inline-block";
+    authOn = !!c.authRequired;
+    if (authOn) {
+        document.getElementById("signOut").style.display = "inline-flex";
+        if (!adminToken) showLogin("");
+        else rawFetch("/api/auth/check", { headers: { "X-Admin-Token": adminToken } }).then(function(r){ r.text().catch(function(){}); if (r.ok) { hideLogin(); poll(); } else showLogin(r.status===429?"Too many wrong passwords. Wait a few minutes and try again.":""); });
+    } else { hideLogin(); poll(); }
     if (c.local) document.getElementById("localBadge").style.display = "inline-block";
     serverFast = !!c.fast;
     if (serverFast) document.getElementById("checkinNote").textContent = "On this WiFi server, changes reach tablets instantly.";
@@ -174,7 +250,7 @@ function render(devices){
         var gameList = gamesFor(d);
         var checks = gameList.map(function(g){
             var on = !allowed || allowed.indexOf(g[0])>-1;
-            return '<label class="'+(on?'on':'')+'"><input type="checkbox" data-dev="'+d.id+'" data-game="'+g[0]+'" '+(on?'checked':'')+'/> '+esc(g[1])+'</label>';
+            return '<label class="'+(on?'on':'')+'"><input type="checkbox" data-dev="'+esc(d.id)+'" data-game="'+esc(g[0])+'" '+(on?'checked':'')+'/> '+esc(g[1])+'</label>';
         }).join("");
         card.innerHTML =
             '<div class="top">'+
@@ -183,25 +259,28 @@ function render(devices){
                 (st.locked?'<span class="lockbadge">LOCKED</span>':'')+
                 (d.kiosk?'<span class="kioskbadge">KIOSK</span>':'')+
                 (d.tv?'<span class="tvbadge">TV</span>':'')+
+                (d.paired?'<span class="pairbadge" title="This tablet has its own secret key; nothing else can pretend to be it">&#128273; Paired</span>':'')+
                 '<span class="spacer"></span>'+
                 '<span class="mini">'+(d.online?'online':'last seen '+ago(d.lastSeen))+' &middot; v'+esc(d.app||'?')+(d.battery!=null?' &middot; &#128267;'+d.battery+'%':'')+' &middot; '+gameList.length+' games</span>'+
             '</div>'+
-            '<div class="id">'+esc(d.id)+(d.platform?' &middot; '+esc(d.platform):'')+'</div>'+(d.online?'<div class="nowplaying">'+(d.playing?(d.playing.icon?d.playing.icon+' ':'')+'<b>'+esc(d.playing.label)+'</b>'+(d.playing.where==="game"?' &mdash; playing now':''):'')+'</div>':'')+
+            '<div class="id">'+esc(d.id)+(d.platform?' &middot; '+esc(d.platform):'')+'</div>'+(d.online?'<div class="nowplaying">'+(d.playing?(d.playing.icon&&/^(&#\d{1,7};){1,4}$/.test(d.playing.icon)?d.playing.icon+' ':'')+'<b>'+esc(d.playing.label)+'</b>'+(d.playing.where==="game"?' &mdash; playing now':''):'')+'</div>':'')+
+            ((d.keyRejectedAt && d.keyRejectedAt > (d.lastSeen||0)) ?
+                '<div class="rejected">&#9888;&#65039; This tablet tried to connect without its key &mdash; usually because the app was reinstalled or reset. If that was you, <button class="btn" data-repair="'+esc(d.id)+'">&#128273; Re-pair</button> and it reconnects on its next check-in.</div>' : '')+
             '<div class="row">'+
-                '<button class="btn '+(st.locked?'danger active':'')+'" data-lock="'+d.id+'">'+(st.locked?'🔒 Locked — tap to unlock':'🔓 Lock this tablet')+'</button>'+
-                '<button class="btn" data-all="'+d.id+'">Allow all</button>'+
-                '<button class="btn" data-none="'+d.id+'">Allow none</button>'+
-                '<span class="savestate" data-savestate="'+d.id+'">'+(saveText[d.id]||'&#10003; Changes save automatically')+'</span>'+
+                '<button class="btn '+(st.locked?'danger active':'')+'" data-lock="'+esc(d.id)+'">'+(st.locked?'🔒 Locked — tap to unlock':'🔓 Lock this tablet')+'</button>'+
+                '<button class="btn" data-all="'+esc(d.id)+'">Allow all</button>'+
+                '<button class="btn" data-none="'+esc(d.id)+'">Allow none</button>'+
+                '<span class="savestate" data-savestate="'+esc(d.id)+'">'+(saveText[d.id]||'&#10003; Changes save automatically')+'</span>'+
             '</div>'+
             '<div class="row">'+
-                '<button class="btn" data-scores="'+d.id+'">&#128202; Scores &amp; stats</button>'+
-                '<button class="btn'+(d.kiosk?' active':'')+'" data-kiosk="'+d.id+'" data-on="'+(d.kiosk?'0':'1')+'">'+(d.kiosk?'&#128275; Exit kiosk':'&#128274; Kiosk mode')+'</button>'+
-                '<button class="btn" data-leave="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128682; Let them out</button>'+
-                '<button class="btn'+(d.finding?' danger active':'')+'" data-find="'+d.id+'" data-on="'+(d.finding?'0':'1')+'"'+(d.online?'':' disabled style="opacity:.5"')+'>'+(d.finding?'&#128263; Stop ringing':'&#128266; Find this tablet')+'</button>'+
-                '<button class="btn" data-msg="'+d.id+'">&#128172; Send message</button>'+'<button class="btn" data-photo="'+d.id+'"'+((d.online&&d.canCamera)?'':' disabled style="opacity:.5"')+' title="'+(d.canCamera?'Take a photo from the tablet camera':'Needs the latest app with camera access')+'">&#128247; Where is it?</button>'+
-                '<button class="btn" data-remote="'+d.id+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128241; Remote control</button>'+
-                '<button class="btn" data-update="'+d.id+'">&#11015;&#65039; Update app</button>'+
-                (!d.online?'<button class="btn danger" data-remove="'+d.id+'">&#128465; Remove device</button>':'')+
+                '<button class="btn" data-scores="'+esc(d.id)+'">&#128202; Scores &amp; stats</button>'+
+                '<button class="btn'+(d.kiosk?' active':'')+'" data-kiosk="'+esc(d.id)+'" data-on="'+(d.kiosk?'0':'1')+'">'+(d.kiosk?'&#128275; Exit kiosk':'&#128274; Kiosk mode')+'</button>'+
+                '<button class="btn" data-leave="'+esc(d.id)+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128682; Let them out</button>'+
+                '<button class="btn'+(d.finding?' danger active':'')+'" data-find="'+esc(d.id)+'" data-on="'+(d.finding?'0':'1')+'"'+(d.online?'':' disabled style="opacity:.5"')+'>'+(d.finding?'&#128263; Stop ringing':'&#128266; Find this tablet')+'</button>'+
+                '<button class="btn" data-msg="'+esc(d.id)+'">&#128172; Send message</button>'+'<button class="btn" data-photo="'+esc(d.id)+'"'+((d.online&&d.canCamera)?'':' disabled style="opacity:.5"')+' title="'+(d.canCamera?'Take a photo from the tablet camera':'Needs the latest app with camera access')+'">&#128247; Where is it?</button>'+
+                '<button class="btn" data-remote="'+esc(d.id)+'"'+(d.online?'':' disabled style="opacity:.5"')+'>&#128241; Remote control</button>'+
+                '<button class="btn" data-update="'+esc(d.id)+'">&#11015;&#65039; Update app</button>'+
+                (!d.online?'<button class="btn danger" data-remove="'+esc(d.id)+'">&#128465; Remove device</button>':'')+
             '</div>'+
             '<div class="mini" style="margin-top:12px">Allowed games (unchecked = hidden on the tablet):</div>'+
             '<div class="games">'+checks+'</div>';
@@ -256,6 +335,9 @@ function wire(){
     document.querySelectorAll("[data-update]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-update");
         fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json","X-Admin-Token":token()},body:JSON.stringify({deviceId:id,action:"update"})})
         .then(function(r){ if(r.status===401){alert("Wrong admin token");return;} b.textContent="Update queued ✓"; setTimeout(function(){b.innerHTML="&#11015;&#65039; Update app";},1500); }); }; });
+    document.querySelectorAll("[data-repair]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-repair");
+        fetch("/api/device/repair",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deviceId:id})})
+        .then(function(r){ if(r.ok){ b.textContent="Re-paired \u2713"; setTimeout(poll,500); } }); }; });
     document.querySelectorAll("[data-photo]").forEach(function(b){ b.onclick=function(){ if(b.disabled) return; openPhoto(b.getAttribute("data-photo")); }; });
     document.querySelectorAll("[data-remove]").forEach(function(b){ b.onclick=function(){ var id=b.getAttribute("data-remove");
         if(!confirm("Remove this device from the dashboard? It will reappear if it checks in again.")) return;
@@ -296,6 +378,7 @@ function save(id, attempt){
 }
 var lastDevices=[];
 function poll(fromDraft){
+    if(authOn && !signedIn) return;          // nothing is fetched until signed in
     if(fromDraft){ render(lastDevices); return; }
     fetch("/api/devices").then(function(r){return r.json();}).then(function(data){ lastDevices=data.devices; render(data.devices); }).catch(function(){});
 }

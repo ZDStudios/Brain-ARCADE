@@ -5,7 +5,11 @@
 
    Env:
      PORT         - port to listen on (Render/Coolify set this automatically)
-     ADMIN_TOKEN  - optional; if set, changing policy requires this token
+     ADMIN_TOKEN  - the dashboard password. EVERY dashboard request needs it — viewing
+                    devices, scores, live screens and camera photos, not just changes.
+                    If unset, a strong one is generated, saved in DATA_DIR and printed
+                    in the log on start-up. (OPEN_DASHBOARD=1 turns auth off; only for
+                    a private network, never on the internet.)
      DATA_DIR     - optional; a writable folder (a mounted volume on a VPS). When
                     set, device locks/allow-lists and score backups are saved there
                     and reloaded on restart, so a redeploy keeps them. Unset (e.g.
@@ -13,11 +17,13 @@
 */
 "use strict";
 const http = require("http");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+let ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+const OPEN_DASHBOARD = process.env.OPEN_DASHBOARD === "1";
 const ONLINE_MS = 40000;
 
 const devices = Object.create(null);  // id -> { id, name, app, lastSeen, battery, games }
@@ -42,6 +48,7 @@ function loadData() {
         const d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
         if (d && typeof d.policies === "object") Object.assign(policies, d.policies);
         if (d && typeof d.scores === "object") Object.assign(scores, d.scores);
+        if (d && typeof d.deviceKeys === "object") Object.assign(deviceKeys, d.deviceKeys);
         console.log("Loaded saved data from " + DATA_FILE);
     } catch (e) {
         if (e.code !== "ENOENT") console.log("Could not read " + DATA_FILE + ": " + e.message);
@@ -55,10 +62,82 @@ function saveDataSoon() {
         try {
             fs.mkdirSync(DATA_DIR, { recursive: true });
             const tmp = DATA_FILE + ".tmp";
-            fs.writeFileSync(tmp, JSON.stringify({ policies: policies, scores: scores }));
+            fs.writeFileSync(tmp, JSON.stringify({ policies: policies, scores: scores, deviceKeys: deviceKeys }));
             fs.renameSync(tmp, DATA_FILE);
         } catch (e) { console.log("Could not save data: " + e.message); }
     }, 2000);
+}
+
+/* ================= authentication =================
+   Dashboard: one admin password (ADMIN_TOKEN) sent as the X-Admin-Token header on
+   every dashboard request. Compared in constant time; repeated wrong guesses from
+   one address are locked out for 10 minutes. The connection itself is encrypted by
+   HTTPS (Coolify's proxy), so the password never crosses the network in the clear.
+
+   Tablets: each one is handed its own secret key the first time it asks
+   (deviceKey:"new"), and from then on every request for that tablet must carry it,
+   so nobody can impersonate a tablet or read its commands and score backup. Only a
+   hash of the key is stored. A tablet that was reset loses its key; the dashboard
+   shows it and "Re-pair" lets it get a new one. Tablets on an older app that never
+   ask for a key keep working as before. */
+const deviceKeys = Object.create(null);   // device id -> sha256(key), hex
+function sha256(v) { return crypto.createHash("sha256").update(String(v)).digest(); }
+function safeEqual(a, b) { const x = sha256(a), y = sha256(b); return crypto.timingSafeEqual(x, y); }
+function initAdminToken() {
+    if (ADMIN_TOKEN || OPEN_DASHBOARD) return;
+    const f = DATA_DIR ? path.join(DATA_DIR, "admin_token.txt") : "";
+    try { if (f) ADMIN_TOKEN = fs.readFileSync(f, "utf8").trim(); } catch (e) {}
+    if (!ADMIN_TOKEN) {
+        ADMIN_TOKEN = crypto.randomBytes(15).toString("base64url");
+        try { if (f) { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(f, ADMIN_TOKEN + "\n", { mode: 0o600 }); } } catch (e) {}
+    }
+    console.log("==================================================================");
+    console.log(" No ADMIN_TOKEN was set, so the dashboard password is:  " + ADMIN_TOKEN);
+    console.log(" Set ADMIN_TOKEN in your environment to choose your own.");
+    console.log("==================================================================");
+}
+function clientIp(req) {
+    // Behind Coolify's proxy the real address is the LAST X-Forwarded-For entry
+    // (the one the proxy added); earlier entries can be faked by the client.
+    const xf = req.headers["x-forwarded-for"];
+    if (xf) { const parts = String(xf).split(",").map(function (x) { return x.trim(); }).filter(Boolean); if (parts.length) return parts[parts.length - 1]; }
+    return (req.socket && req.socket.remoteAddress) || "?";
+}
+const authFails = Object.create(null);   // ip -> { n, first, until }
+function isAdmin(req) {
+    if (OPEN_DASHBOARD) return true;
+    const t = req.headers["x-admin-token"];
+    return !!(t && ADMIN_TOKEN && safeEqual(t, ADMIN_TOKEN));
+}
+/** true = go ahead; false = a 401/429 has already been sent. */
+function requireAdmin(req, res) {
+    const ip = clientIp(req), now = Date.now(), f = authFails[ip];
+    if (f && f.until > now) { send(res, 429, { error: "Too many wrong passwords. Try again in a few minutes." }); return false; }
+    if (isAdmin(req)) { if (f) delete authFails[ip]; return true; }
+    if (req.headers["x-admin-token"]) {
+        const g = (f && now - f.first < 10 * 60000) ? f : (authFails[ip] = { n: 0, first: now, until: 0 });
+        if (++g.n >= 10) g.until = now + 10 * 60000;
+    }
+    send(res, 401, { error: "unauthorized" });
+    return false;
+}
+/** Is this request allowed to act as tablet `id`? Tablets that never paired pass. */
+function deviceKeyOk(id, key) {
+    const have = deviceKeys[id];
+    if (!have) return true;
+    if (!key || key === "new") return false;
+    return crypto.timingSafeEqual(sha256(key), Buffer.from(have, "hex"));
+}
+// Device ids end up in the dashboard; only allow plain characters.
+function validId(id) { return typeof id === "string" && /^[A-Za-z0-9_.:-]{1,80}$/.test(id); }
+// Game icons are HTML entities like "&#9822;"; anything else is dropped.
+function cleanPlaying(pl) {
+    if (!pl || typeof pl !== "object") return null;
+    const icon = typeof pl.icon === "string" && /^(&#\d{1,7};){1,4}$/.test(pl.icon) ? pl.icon : "";
+    return {
+        where: String(pl.where || "").slice(0, 20), label: String(pl.label || "").slice(0, 80),
+        id: typeof pl.id === "string" ? pl.id.slice(0, 40) : undefined, icon: icon
+    };
 }
 
 /* ---- multiplayer (Brain Race) ----
@@ -289,7 +368,12 @@ function send(res, code, body, type) {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
+        // Browsers only honour this over HTTPS, which is how the site is served.
+        "Strict-Transport-Security": "max-age=31536000",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer"
     });
     res.end(Buffer.isBuffer(body) ? body : (typeof body === "string" ? body : JSON.stringify(body)));
 }
@@ -323,18 +407,43 @@ const server = http.createServer(async function (req, res) {
     if (p === "/api/heartbeat" && req.method === "POST") {
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        if (!validId(b.deviceId)) return send(res, 400, { error: "bad deviceId" });
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) {
+            // A tablet with the wrong (or no) key for a paired id: usually a reset or
+            // reinstall. Note it so the dashboard can offer Re-pair; change nothing else.
+            const known = devices[b.deviceId] || (devices[b.deviceId] = { id: b.deviceId, name: String(b.name || "Tablet").slice(0, 60), app: "", lastSeen: 0, games: null });
+            known.keyRejectedAt = Date.now();
+            return send(res, 401, { error: "device key", repair: true });
+        }
+        var newKey = null;
+        if (!deviceKeys[b.deviceId] && b.deviceKey === "new") {
+            newKey = crypto.randomBytes(24).toString("base64url");
+            deviceKeys[b.deviceId] = sha256(newKey).toString("hex");
+            saveDataSoon();
+        }
+        // Cap the list so a flood of made-up devices cannot fill the server's memory.
+        if (!devices[b.deviceId] && Object.keys(devices).length >= 300) {
+            const oldest = Object.keys(devices).sort(function (x, y) { return devices[x].lastSeen - devices[y].lastSeen; })[0];
+            if (oldest) delete devices[oldest];
+        }
         var bat = (typeof b.battery === "number" && b.battery >= 0) ? b.battery : null;
         var prev = devices[b.deviceId] || {};
-        var games = Array.isArray(b.games) && b.games.length ? b.games : (prev.games || null);
+        // Keep only well-formed game entries (ids and names end up in the dashboard).
+        var games = Array.isArray(b.games) && b.games.length ? b.games.filter(function (g) {
+            return g && typeof g.id === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(g.id);
+        }).slice(0, 200).map(function (g) {
+            return { id: g.id, name: String(g.name || g.id).slice(0, 40), mode: g.mode === "low" ? "low" : "high",
+                     suffix: String(g.suffix || "").slice(0, 12), label: String(g.label || "Best").slice(0, 20) };
+        }) : (prev.games || null);
         devices[b.deviceId] = {
-            id: b.deviceId, name: b.name || "Tablet", app: b.app || "", lastSeen: Date.now(),
+            id: b.deviceId, name: String(b.name || "Tablet").slice(0, 60), app: String(b.app || "").slice(0, 20), lastSeen: Date.now(),
             platform: b.platform ? String(b.platform).slice(0, 40) : (prev.platform || ""),
             canFind: b.canFind === undefined ? !!prev.canFind : !!b.canFind,
             battery: bat, games: games, canStream: !!b.canStream,
             canKiosk: !!b.canKiosk, kiosk: !!b.kiosk, tv: !!b.tv,
             stats: (b.stats && typeof b.stats === "object") ? b.stats : (prev.stats || null),
             summary: (b.summary && typeof b.summary === "object") ? b.summary : (prev.summary || null),
-            playing: (b.playing && typeof b.playing === "object") ? b.playing : (prev.playing || null),
+            playing: (b.playing && typeof b.playing === "object") ? cleanPlaying(b.playing) : (prev.playing || null),
             canCamera: b.canCamera === undefined ? !!prev.canCamera : !!b.canCamera
         };
         const pol = policies[b.deviceId] || defaultPolicy();
@@ -371,12 +480,14 @@ const server = http.createServer(async function (req, res) {
             photo: cmd.photoAt ? { facing: cmd.photoFacing || "environment", ts: cmd.photoAt } : null,
             stream: !!cmd.stream,
             input: taps,
-            scoresBackup: scores[b.deviceId] || null
+            scoresBackup: scores[b.deviceId] || null,
+            deviceKey: newKey || undefined
         });
     }
 
     // Full high-score + play-stats report for one device (or every device).
     if (p === "/api/scores" && req.method === "GET") {
+        if (!requireAdmin(req, res)) return;
         const id = u.searchParams.get("deviceId");
         const build = function (d) {
             const meta = {};
@@ -409,6 +520,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (p === "/api/devices" && req.method === "GET") {
+        if (!requireAdmin(req, res)) return;
         const now = Date.now();
         const list = Object.keys(devices).map(function (id) {
             const d = devices[id];
@@ -424,6 +536,8 @@ const server = http.createServer(async function (req, res) {
                 finding: !!cmd.findOn,
                 streaming: !!cmd.stream,
                 playing: d.playing || null,
+                paired: !!deviceKeys[id],
+                keyRejectedAt: d.keyRejectedAt || 0,
                 canCamera: !!d.canCamera,
                 hasPhoto: !!(photos[id] && (now - photos[id].ts) < 10 * 60000),
                 photoTs: photos[id] ? photos[id].ts : 0,
@@ -436,7 +550,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (p === "/api/command" && req.method === "POST") {
-        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        if (!requireAdmin(req, res)) return;
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
@@ -456,12 +570,16 @@ const server = http.createServer(async function (req, res) {
     if (p === "/api/frame" && req.method === "POST") {
         const b = await readBody(req);
         if (!b.deviceId || !b.data) return send(res, 400, { error: "deviceId and data required" });
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
+        // Only a tablet the dashboard is actually watching may upload frames.
+        if (!(commands[b.deviceId] && commands[b.deviceId].stream)) return send(res, 409, { error: "not streaming" });
         frames[b.deviceId] = { data: String(b.data), ts: Date.now() };
         return send(res, 200, { ok: true });
     }
 
     // Dashboard fetches the latest frame for a device.
     if (p === "/api/frame" && req.method === "GET") {
+        if (!requireAdmin(req, res)) return;
         const id = u.searchParams.get("deviceId");
         const fr = id && frames[id];
         if (!fr) return send(res, 200, { data: null });
@@ -472,6 +590,9 @@ const server = http.createServer(async function (req, res) {
     if (p === "/api/photo" && req.method === "POST") {
         const b = await readBody(req);
         if (!b.deviceId || !b.data) return send(res, 400, { error: "deviceId and data required" });
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
+        // Only accept a photo the dashboard actually asked for.
+        if (!(commands[b.deviceId] && commands[b.deviceId].photoAt)) return send(res, 409, { error: "no photo was requested" });
         photos[b.deviceId] = { data: String(b.data), ts: Date.now(), facing: b.facing === "user" ? "user" : "environment" };
         const cmd = commands[b.deviceId] || (commands[b.deviceId] = {});
         cmd.photoAt = 0;   // request fulfilled
@@ -479,6 +600,7 @@ const server = http.createServer(async function (req, res) {
     }
     // Dashboard fetches the latest camera photo.
     if (p === "/api/photo" && req.method === "GET") {
+        if (!requireAdmin(req, res)) return;
         const id = u.searchParams.get("deviceId");
         const ph = id && photos[id];
         if (!ph) return send(res, 200, { data: null });
@@ -488,7 +610,7 @@ const server = http.createServer(async function (req, res) {
     // Dashboard queues remote input: a tap (normalized 0..1 coords) or a scroll
     // (dyFrac is a fraction of the screen height, so it works on any device).
     if (p === "/api/input" && req.method === "POST") {
-        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        if (!requireAdmin(req, res)) return;
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         var q = inputs[b.deviceId] || (inputs[b.deviceId] = []);
@@ -502,17 +624,36 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (p === "/api/device/remove" && req.method === "POST") {
-        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        if (!requireAdmin(req, res)) return;
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         delete devices[b.deviceId]; delete policies[b.deviceId]; delete commands[b.deviceId];
         delete frames[b.deviceId]; delete inputs[b.deviceId]; delete scores[b.deviceId]; delete photos[b.deviceId];
+        delete deviceKeys[b.deviceId];
         saveDataSoon();
         return send(res, 200, { ok: true });
     }
 
+    // Let a reset/reinstalled tablet pair again (it gets a fresh key on its next
+    // check-in). Keeps its scores, locks and allowed games.
+    if (p === "/api/device/repair" && req.method === "POST") {
+        if (!requireAdmin(req, res)) return;
+        const b = await readBody(req);
+        if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
+        delete deviceKeys[b.deviceId];
+        if (devices[b.deviceId]) delete devices[b.deviceId].keyRejectedAt;
+        saveDataSoon();
+        return send(res, 200, { ok: true });
+    }
+
+    // The dashboard's sign-in checks the password with this.
+    if (p === "/api/auth/check" && req.method === "GET") {
+        if (!requireAdmin(req, res)) return;
+        return send(res, 200, { ok: true });
+    }
+
     if (p === "/api/policy" && req.method === "POST") {
-        if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) return send(res, 401, { error: "unauthorized" });
+        if (!requireAdmin(req, res)) return;
         const b = await readBody(req);
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         policies[b.deviceId] = {
@@ -524,7 +665,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (p === "/api/config" && req.method === "GET") {
-        return send(res, 200, { authRequired: !!ADMIN_TOKEN });
+        return send(res, 200, { authRequired: !OPEN_DASHBOARD, deviceKeys: true });
     }
 
     /* ================= Multiplayer (Brain Race) =================
@@ -536,6 +677,7 @@ const server = http.createServer(async function (req, res) {
     // One poll: refresh my presence and get back peers, invites and my match.
     if (p === "/api/mp/sync" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         mpPrune();
         const me = mpPeer(b.deviceId);
@@ -564,6 +706,7 @@ const server = http.createServer(async function (req, res) {
     // Ask another device to race.
     if (p === "/api/mp/invite" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         mpPrune();
         if (!b.deviceId || !b.to) return send(res, 400, { error: "deviceId and to required" });
         if (!mpPeers[b.to]) return send(res, 404, { error: "that device is not in the lobby" });
@@ -577,6 +720,7 @@ const server = http.createServer(async function (req, res) {
     // match already forming, which is how a third racer gets in.
     if (p === "/api/mp/respond" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         mpPrune();
         const inv = invites[b.inviteId];
         if (!inv || inv.to !== b.deviceId) return send(res, 404, { error: "unknown invite" });
@@ -599,6 +743,7 @@ const server = http.createServer(async function (req, res) {
        energy — a client can only say which tile it picked. */
     if (p === "/api/mp/task" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         const match = matches[b.matchId];
         if (!match) return send(res, 404, { error: "unknown match" });
         const pl = match.players.filter(function (x) { return x.id === b.deviceId; })[0];
@@ -639,6 +784,7 @@ const server = http.createServer(async function (req, res) {
        whoever is winning (excluding yourself), so there is no target UI to learn. */
     if (p === "/api/mp/ability" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         const match = matches[b.matchId];
         if (!match) return send(res, 404, { error: "unknown match" });
         const pl = match.players.filter(function (x) { return x.id === b.deviceId; })[0];
@@ -685,6 +831,7 @@ const server = http.createServer(async function (req, res) {
     // Leave the lobby or bail out of a race.
     if (p === "/api/mp/quit" && req.method === "POST") {
         const b = await readBody(req);
+        if (!deviceKeyOk(b.deviceId, b.deviceKey)) return send(res, 401, { error: "device key" });
         const me = mpPeers[b.deviceId];
         const match = (b.matchId && matches[b.matchId]) || (me && me.matchId && matches[me.matchId]);
         if (match) {
@@ -720,6 +867,7 @@ const server = http.createServer(async function (req, res) {
 });
 
 loadData();
+initAdminToken();
 server.listen(PORT, function () {
     console.log("Brain Arcade control server on :" + PORT + (DATA_DIR ? " (persisting to " + DATA_DIR + ")" : " (in-memory)"));
 });
@@ -729,7 +877,7 @@ server.listen(PORT, function () {
 ["SIGTERM", "SIGINT"].forEach(function (sig) {
     process.on(sig, function () {
         try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-            if (DATA_FILE) { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify({ policies: policies, scores: scores })); } } catch (e) {}
+            if (DATA_FILE) { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify({ policies: policies, scores: scores, deviceKeys: deviceKeys })); } } catch (e) {}
         server.close(function () { process.exit(0); });
         setTimeout(function () { process.exit(0); }, 1500).unref();
     });

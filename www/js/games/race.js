@@ -79,7 +79,7 @@
                 var ctrl = ("timeout" in AbortSignal) ? AbortSignal.timeout(7000) : undefined;
                 return fetch(base + path, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body || {}), signal: ctrl
+                    body: JSON.stringify(Object.assign({}, body || {}, api.deviceKeyFor ? { deviceKey: api.deviceKeyFor(base) } : {})), signal: ctrl
                 }).then(function (r) { return r.json(); }).catch(function () { return null; });
             }
             function applyMatch(data) {

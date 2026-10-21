@@ -19,6 +19,8 @@ port of control-server/server.js, so both servers speak exactly the same API.
 """
 import argparse
 import ctypes
+import hmac
+import re
 import json
 import mimetypes
 import os
@@ -410,6 +412,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if self.command != "HEAD":
@@ -426,7 +431,18 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def authed(self):
-        return not ADMIN_TOKEN or self.headers.get("X-Admin-Token") == ADMIN_TOKEN
+        # Constant-time compare. With no password set the WiFi dashboard is open to
+        # devices on your own network (set one with --admin-token or ADMIN_TOKEN).
+        if not ADMIN_TOKEN:
+            return True
+        return hmac.compare_digest((self.headers.get("X-Admin-Token") or "").encode(), ADMIN_TOKEN.encode())
+
+    def need_admin(self):
+        """With a password set, every dashboard request needs it (reads too)."""
+        if self.authed():
+            return True
+        self.send(401, {"error": "unauthorized"})
+        return False
 
     def do_OPTIONS(self):
         self.send(204, "")
@@ -473,6 +489,16 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/heartbeat" and method == "POST":
             b = self.body()
             did = b.get("deviceId")
+            if did and not (isinstance(did, str) and re.match(r"^[A-Za-z0-9_.:-]{1,80}$", did)):
+                return self.send(400, {"error": "bad deviceId"})
+            if isinstance(b.get("playing"), dict):
+                pl = b["playing"]
+                icon = pl.get("icon") if isinstance(pl.get("icon"), str) and re.match(r"^(&#\d{1,7};){1,4}$", pl.get("icon")) else ""
+                b["playing"] = {"where": str(pl.get("where") or "")[:20], "label": str(pl.get("label") or "")[:80], "icon": icon}
+            if isinstance(b.get("games"), list):
+                b["games"] = [{"id": g["id"], "name": str(g.get("name") or g["id"])[:40], "mode": "low" if g.get("mode") == "low" else "high",
+                               "suffix": str(g.get("suffix") or "")[:12], "label": str(g.get("label") or "Best")[:20]}
+                              for g in b["games"][:200] if isinstance(g, dict) and isinstance(g.get("id"), str) and re.match(r"^[A-Za-z0-9_-]{1,40}$", g["id"])]
             if not did:
                 return self.send(400, {"error": "deviceId required"})
             bat = b.get("battery")
@@ -522,6 +548,8 @@ class Handler(BaseHTTPRequestHandler):
             })
 
         if p == "/api/scores" and method == "GET":
+            if not self.need_admin():
+                return
             did = (q.get("deviceId") or [None])[0]
 
             def build(d):
@@ -547,6 +575,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"devices": [build(d) for d in devices.values()]})
 
         if p == "/api/devices" and method == "GET":
+            if not self.need_admin():
+                return
             t = now_ms()
             lst = []
             for did, d in devices.items():
@@ -612,6 +642,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
 
         if p == "/api/frame" and method == "GET":
+            if not self.need_admin():
+                return
             did = (q.get("deviceId") or [None])[0]
             fr = frames.get(did) if did else None
             if not fr:
@@ -629,6 +661,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
 
         if p == "/api/photo" and method == "GET":
+            if not self.need_admin():
+                return
             did = (q.get("deviceId") or [None])[0]
             ph = photos.get(did) if did else None
             if not ph:
@@ -676,6 +710,11 @@ class Handler(BaseHTTPRequestHandler):
             save_data_soon()
             notify(did)
             return self.send(200, {"ok": True, "policy": policies[did]})
+
+        if p == "/api/auth/check" and method == "GET":
+            if not self.need_admin():
+                return
+            return self.send(200, {"ok": True})
 
         if p == "/api/config" and method == "GET":
             return self.send(200, {"authRequired": bool(ADMIN_TOKEN), "local": True, "fast": True})
@@ -875,6 +914,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def frame_wait(self, q):
         """Answers as soon as a newer screen frame than `since` arrives."""
+        if not self.need_admin():
+            return
         did = (q.get("deviceId") or [""])[0]
         try:
             since = int((q.get("since") or ["0"])[0])
@@ -1053,7 +1094,11 @@ def main():
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", DEFAULT_PORT)))
     ap.add_argument("--no-browser", action="store_true", help="do not open the dashboard on start")
     ap.add_argument("--no-firewall", action="store_true", help="do not touch the Windows Firewall")
+    ap.add_argument("--admin-token", default="", help="dashboard password (same as the ADMIN_TOKEN env var)")
     args = ap.parse_args()
+    global ADMIN_TOKEN
+    if args.admin_token:
+        ADMIN_TOKEN = args.admin_token
 
     load_data()
     try:
@@ -1081,6 +1126,7 @@ def main():
     if ips:
         print("  If one does not, type this on the tablet in")
         print("  Settings > Computer's address:   %s" % (ips[0] if args.port == DEFAULT_PORT else "%s:%d" % (ips[0], args.port)))
+    print("  Dashboard password: %s" % ("ON" if ADMIN_TOKEN else "off (anyone on this WiFi can open it; use --admin-token to set one)"))
     print("  Leave this window open. Press Ctrl+C to stop.")
     print(line, flush=True)
     if not args.no_firewall:

@@ -20,7 +20,7 @@ or restricted until it can reach the server again.
    `control-server/` folder (`rootDir: control-server`). Leave **Blueprint Path** as the
    default `render.yaml`.
    *(Or skip the Blueprint: New → Web Service, root directory `control-server`, start command `node server.js`.)*
-3. When it's live you'll get a URL like `https://brain-arcade-control.onrender.com`.
+3. When it's live you'll get a URL like `https://brainarcade.zdstudios.network`.
 4. On each tablet: **Brain Arcade → Settings → Control server URL** → paste that URL.
    Give each tablet a **Device name** too so you can tell them apart.
 5. Open the URL in any browser → that's your dashboard.

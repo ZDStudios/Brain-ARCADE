@@ -5,7 +5,7 @@ Solitaire, Rush Hour, Wordle, 2048, Reversi, a 3D spatial-memory game and a
 head-to-head multiplayer race — plus WiFi auto-updates, a built-in kiosk lock, and
 a remote control dashboard.
 
-https://brain-arcade-control.onrender.com/
+https://brainarcade.zdstudios.network/
 
 ## 📲 Get the app
 Download the latest APK from **[Releases](../../releases)** →
@@ -210,7 +210,7 @@ an OTA reload — and that never runs the normal teardown path.
   that is already over.
 
 ## 🌐 Server URL is built in
-Fresh installs already point at <https://brain-arcade-control.onrender.com> — nobody
+Fresh installs already point at <https://brainarcade.zdstudios.network> — nobody
 has to type a URL on a tablet. The copy served by the control server itself (the
 website under `/play/`) uses **its own origin**, so the website and the app always
 agree without any configuration. Change it any time in
@@ -314,6 +314,30 @@ the games while you're playing. TV layout (bigger type, 4–5 column grid,
 overscan-safe margins) turns on automatically and can be forced in
 **Settings → Appearance → TV mode**.
 
+## 🔐 Security
+Everything is encrypted and signed in:
+
+- **HTTPS everywhere.** The app and website talk to `https://brainarcade.zdstudios.network` over
+  HTTPS (Coolify provides the certificate), so the password, screens, photos and
+  commands never cross the internet in the clear. A tablet with an old `http://`
+  address for the server is upgraded to `https://` by itself.
+- **The dashboard needs a password for everything** — not just changes, but
+  *seeing* the tablets, scores, live screens and camera photos too. It is the server's
+  `ADMIN_TOKEN`; if none is set, the server makes a strong one, keeps it in its data
+  volume and prints it in the log. The sign-in is remembered in that browser until you
+  press **Sign out**. Ten wrong passwords lock that address out for 10 minutes.
+- **Every tablet has its own secret key.** The first time a tablet connects it is given
+  a key, and from then on every check-in, screen frame, photo and multiplayer move must
+  carry it, so nobody can pretend to be one of your tablets or read what is sent to it.
+  The server stores only a hash of each key. The dashboard shows **🔑 Paired**.
+  If a tablet is reset or reinstalled it loses its key; the dashboard says so and
+  **Re-pair** lets it reconnect (its scores and settings are kept).
+- **Hardened against fake tablets.** Names, ids, icons and game lists a tablet sends are
+  checked and escaped, so a made-up device cannot inject anything into the dashboard.
+  Screens and photos are only accepted while the dashboard is actually asking for them.
+- The WiFi server on your own computer can have a password too:
+  `BrainArcadeServer.exe --admin-token yourpassword`.
+
 ## 💾 The dashboard saves by itself
 There is no **Save changes** button any more. Locking, **Allow all / Allow none** and
 ticking games on or off are sent to the tablet straight away; ticking several games in
@@ -341,7 +365,7 @@ on a device that cannot do it, and on the WiFi server the photo arrives in about
 second.
 
 ## 🎮 Control dashboard
-Live at <https://brain-arcade-control.onrender.com> (deploy your own from
+Live at <https://brainarcade.zdstudios.network> (deploy your own from
 [`control-server/`](control-server) — it has a `render.yaml`). New installs already
 point at it. From the dashboard you can lock a tablet, limit it to certain games, see
 every high score, send a message, take remote control, toggle kiosk, or let a device

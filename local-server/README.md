@@ -1,8 +1,7 @@
 # 📡 Brain Arcade Server (run it on your own computer)
 
-The same dashboard as <https://brain-arcade-control.onrender.com>, running on a
-computer in your house. Use it when the Render server is offline (for example when
-the free Render hours run out) — every Brain Arcade tablet on the same WiFi finds it
+The same dashboard as <https://brainarcade.zdstudios.network>, running on a
+computer in your house. Use it when the main server is offline — every Brain Arcade tablet on the same WiFi finds it
 by itself. Nobody types an IP address.
 
 ## Start it
@@ -36,7 +35,9 @@ The window logs what happens, which is the quickest way to see where it breaks:
 
 If after a minute no tablet has connected it prints a checklist.
 
-Options: `--port 9000` to use another port, `--no-browser` to not open the dashboard.
+Options: `--port 9000` to use another port, `--no-browser` to not open the dashboard,
+`--admin-token yourpassword` to put a password on the WiFi dashboard (without one,
+anyone on your WiFi can open it).
 
 ## How the tablets find it
 
@@ -48,16 +49,16 @@ Android app, so the over-WiFi game updates cannot add it). Older apps show
    **41234**). This server answers with its address.
 2. If the router blocks broadcasts, the tablet knocks on port **8787** of every address
    on the network and keeps the one whose `/api/ping` says it is Brain Arcade.
-3. **A running WiFi server is used first** — even when Render is up — and the status dot
+3. **A running WiFi server is used first** — even when the main server is up — and the status dot
    next to the title turns **blue**. When the computer's server stops, the tablet goes
-   back to Render (dot **green**) by itself.
+   back to the main server (dot **green**) by itself.
 
 Tablet **Settings** has everything to check or fix it:
 
 | Setting | What it does |
 | --- | --- |
 | Use a server on this WiFi | On/off, and shows what the tablet is connected to right now |
-| Prefer the WiFi server | On (default): a running WiFi server always wins. Off: only when Render is down |
+| Prefer the WiFi server | On (default): a running WiFi server always wins. Off: only when the main server is down |
 | Computer's address + **Test** | Type the address the server window shows (e.g. `192.168.1.20`). Test says straight away whether the tablet can reach it, and what to check if not |
 | Look for a WiFi server now | Searches immediately and says what it tried |
 
@@ -68,7 +69,7 @@ devices apart).
 
 ## What it does
 
-Everything the Render dashboard does — it is a line-by-line port of
+Everything the main dashboard does — it is a line-by-line port of
 `control-server/server.js` and speaks exactly the same API:
 
 - see every tablet (online, battery, app version, platform)
@@ -76,14 +77,14 @@ Everything the Render dashboard does — it is a line-by-line port of
 - scores & play stats, with score backup
 - send a message, remote control (live screen + taps), kiosk mode on/off,
   "let them out", find-my-tablet (ring), update the app
-- **instant remote control** — far faster than on Render: the screen streams at 10+
+- **instant remote control** — far faster than over the internet: the screen streams at 10+
   updates a second and taps, scrolls and commands arrive immediately
 - the **Brain Race 3D** multiplayer lobby — tablets on the same WiFi can race
   each other with no internet at all
 - `/play/` — the whole arcade in any browser on your network
 
 Locks, game limits and score backups are saved to `brain_arcade_data.json` next to the
-program, so they survive a restart. (The Render server keeps everything in memory.)
+program, so they survive a restart.
 
 Set `ADMIN_TOKEN` in the environment to require a password for changes, exactly like
 the Render server.

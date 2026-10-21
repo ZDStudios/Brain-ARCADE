@@ -6,7 +6,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.22.0";
+    var VERSION = "1.23.0";
     var batteryLevel = -1;
     var GAMES = [];
     var current = null;      // { def, cleanup }
@@ -27,7 +27,10 @@
        a URL on a tablet. When this copy is being served BY a control server (the
        Render site, or a copy on the LAN) its own origin is by definition the right
        answer, so use that and the website matches the app automatically. */
-    var DEFAULT_SERVER_URL = "https://brain-arcade-control.onrender.com";
+    var DEFAULT_SERVER_URL = "https://brainarcade.zdstudios.network";
+    // Earlier built-in addresses. A tablet still pointing at one of these was never
+    // changed by hand, so it moves to the new server by itself.
+    var OLD_DEFAULT_URLS = ["https://brain-arcade-control.onrender.com", "http://brain-arcade-control.onrender.com"];
     function defaultServerUrl() {
         try {
             // The control server is the only thing that serves this app under /play/,
@@ -51,6 +54,16 @@
         save("settings", settings);
     }
     if (settings.serverUrl == null) settings.serverUrl = "";
+    if (OLD_DEFAULT_URLS.indexOf(String(settings.serverUrl).replace(/\/+$/, "")) > -1) {
+        settings.serverUrl = DEFAULT_SERVER_URL;
+        save("settings", settings);
+    }
+    // Plain http to the main server would send everything unencrypted; the main
+    // server is HTTPS-only, so upgrade a hand-typed http:// address for it.
+    if (/^http:\/\/brainarcade\.zdstudios\.network/i.test(settings.serverUrl)) {
+        settings.serverUrl = settings.serverUrl.replace(/^http:/i, "https:");
+        save("settings", settings);
+    }
 
     /* ---------- native bridge helpers ---------- */
     function bridgeCall(name, dflt, arg) {
@@ -1179,6 +1192,7 @@
             // Multiplayer plumbing: the control server this device is talking to,
             // plus who it is to the other players.
             serverUrl: serverUrl(),
+            deviceKeyFor: keyFor,
             deviceId: deviceId,
             deviceName: settings.deviceName || "",
             platform: platformLabel(),
@@ -1258,6 +1272,20 @@
     var lastLanScan = 0;
     var lastLocalError = "";
     function primaryUrl() { return (settings.serverUrl || "").replace(/\/+$/, ""); }
+    /* ---- this tablet's secret key, one per server ----
+       The main server hands each tablet its own key the first time it asks
+       ("new"); every later request carries it, so nobody else can pretend to be
+       this tablet. It travels in the (HTTPS-encrypted) request body, not a header,
+       so older WiFi servers that do not know about keys simply ignore it. */
+    var deviceKeys = load("deviceKeys", {}) || {};
+    var keyRejected = {};             // server -> time it refused our key
+    function keyFor(url) { var k = deviceKeys[String(url || "").replace(/\/+$/, "")]; return k || "new"; }
+    function setKey(url, k) {
+        url = String(url || "").replace(/\/+$/, "");
+        if (k) deviceKeys[url] = k; else delete deviceKeys[url];
+        save("deviceKeys", deviceKeys);
+    }
+    function withKey(url, obj) { obj.deviceKey = keyFor(url); return obj; }
     function serverUrl() { return usingLocal && localUrl ? localUrl : primaryUrl(); }
     function lanCapable() { return !!(window.AndroidBridge && typeof window.AndroidBridge.findLocalServer === "function"); }
     function lanEnabled() { return settings.lanServer !== false && lanCapable(); }
@@ -1378,13 +1406,28 @@
         };
         if (pendingClearScores) { body.clearScores = true; pendingClearScores = false; }
         if (pendingFindStopped) { body.findStopped = true; pendingFindStopped = false; }
-        var payload = JSON.stringify(body);
         var soon = false;
         function beat(url) {
             var signal = "timeout" in AbortSignal ? AbortSignal.timeout(8000) : undefined;
+            var payload = JSON.stringify(withKey(url, Object.assign({}, body)));
             return fetch(url + "/api/heartbeat", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: payload, signal: signal
-            }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+            }).then(function (r) {
+                if (r.status === 401) {
+                    // Our key was refused (app reset/reinstalled, or re-paired on the
+                    // dashboard): forget it so the next check-in asks for a new one.
+                    return r.json().catch(function () { return {}; }).then(function (j) {
+                        if (j && j.error === "device key") { setKey(url, ""); keyRejected[url] = Date.now(); }
+                        throw new Error("HTTP 401");
+                    });
+                }
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json().then(function (j) {
+                    if (j && j.deviceKey) setKey(url, j.deviceKey);
+                    delete keyRejected[url];
+                    return j;
+                });
+            });
         }
         function ok(data) {
             if (usingLocal) startEvents();
@@ -1536,7 +1579,7 @@
                 if (b64 && url) {
                     fetch(url + "/api/photo", {
                         method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ deviceId: deviceId, data: b64, facing: facing })
+                        body: JSON.stringify(withKey(url, { deviceId: deviceId, data: b64, facing: facing }))
                     }).catch(function () {});
                 }
                 cleanup();
@@ -1666,7 +1709,7 @@
         lastFrame = b64; lastFrameAt = Date.now();
         fetch(url + "/api/frame", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ deviceId: deviceId, data: b64 })
+            body: JSON.stringify(withKey(url, { deviceId: deviceId, data: b64 }))
         }).catch(function () {}).then(function () {
             frameBusy = false;
             if (streaming) streamTimer = setTimeout(streamStep, fastLink() ? 40 : 1200);
@@ -2286,7 +2329,8 @@
         ]));
         g4.appendChild(textRow("&#127991;", "Device name", "Shown on the dashboard and to other players", "deviceName", "Tablet"));
         g4.appendChild(textRow("&#127760;", "Control server URL",
-            serverConnected() && !usingLocal ? "Connected \u2705 \u2014 multiplayer is available"
+            keyRejected[primaryUrl()] && !serverConnected() ? "\u26A0\uFE0F The server does not recognise this tablet any more (was the app reset?). On the dashboard, tap Re-pair on this tablet."
+                              : serverConnected() && !usingLocal ? "Connected \u2705 \u2014 multiplayer is available"
                               : usingLocal ? "Using the WiFi server below instead"
                               : (primaryUrl() ? "Not reachable right now" : "Blank \u2014 no dashboard, no multiplayer"),
             "serverUrl", defaultServerUrl()));
