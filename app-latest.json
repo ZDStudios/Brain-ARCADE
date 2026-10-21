@@ -1,6 +1,6 @@
 {
-  "versionCode": 31,
-  "versionName": "1.22.0",
+  "versionCode": 32,
+  "versionName": "1.23.0",
   "apkUrl": "https://github.com/ZDStudios/Brain-ARCADE/releases/download/brain-arcade-latest/BrainArcade-debug.apk",
   "notes": "Brain Arcade now uses its new home, brainarcade.zdstudios.network, with everything encrypted. Each tablet gets its own secret key and the dashboard needs a password."
 }
