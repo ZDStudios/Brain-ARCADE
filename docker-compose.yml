@@ -1,0 +1,30 @@
+# Brain Arcade control server — Docker Compose (works with Coolify's
+# "Docker Compose" deploy type, or plain `docker compose up -d` on any VPS).
+services:
+  control:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Or pull a prebuilt image instead of building:
+    # image: ghcr.io/zdstudios/brain-arcade-control:latest
+    restart: unless-stopped
+    init: true
+    environment:
+      # Set a password to require it for lock/allow changes (leave unset for none).
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PORT: "3000"
+      DATA_DIR: /data
+    volumes:
+      # Keeps device locks, allow-lists and score backups across redeploys.
+      - brain-arcade-data:/data
+    ports:
+      # Coolify usually sets its own proxy; this is for a plain `docker compose up`.
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  brain-arcade-data:

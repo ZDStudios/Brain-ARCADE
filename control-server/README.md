@@ -63,3 +63,10 @@ the Brain Race lobby open on it. Presence expires 20s after the last poll.
 
 ## Running it at home instead
 The same server as a Python script / Windows `.exe` lives in [`../local-server`](../local-server). Tablets on the same WiFi find it automatically when this Render server is offline.
+
+
+## Hosting it yourself (VPS / Coolify / Docker)
+This repo has a `Dockerfile` and `docker-compose.yml` at the root and a step-by-step
+guide in [`DEPLOY.md`](../DEPLOY.md). Set `ADMIN_TOKEN` for a password, and mount a
+volume at `/data` (`DATA_DIR`) to keep device locks, allow-lists and score backups
+across redeploys. Without `DATA_DIR` the server is memory-only (the old Render behaviour).

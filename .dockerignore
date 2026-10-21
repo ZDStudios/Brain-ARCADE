@@ -1,0 +1,11 @@
+# Keep the control-server image tiny: only control-server/ and www/ are copied,
+# but ignore everything heavy just in case the context is used more broadly.
+.git
+BrainGames
+local-server
+**/*.md
+**/.DS_Store
+**/node_modules
+app-latest.json
+**/*.apk
+**/*.keystore

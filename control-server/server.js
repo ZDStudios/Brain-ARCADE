@@ -4,8 +4,12 @@
    lets you lock a device or restrict it to certain games.
 
    Env:
-     PORT         - port to listen on (Render sets this automatically)
+     PORT         - port to listen on (Render/Coolify set this automatically)
      ADMIN_TOKEN  - optional; if set, changing policy requires this token
+     DATA_DIR     - optional; a writable folder (a mounted volume on a VPS). When
+                    set, device locks/allow-lists and score backups are saved there
+                    and reloaded on restart, so a redeploy keeps them. Unset (e.g.
+                    on Render's free tier) the server is memory-only as before.
 */
 "use strict";
 const http = require("http");
@@ -25,6 +29,37 @@ const scores = Object.create(null);   // id -> { gameId: bestValue }  (backup ac
 const photos = Object.create(null);   // id -> { data, ts, facing }  (latest "where is it?" camera photo)
 
 function defaultPolicy() { return { locked: false, allowedGames: null }; }
+
+/* ---- optional disk persistence (DATA_DIR) ----
+   Only policies and score backups are worth keeping across a restart; devices,
+   commands, frames, inputs and photos are live/ephemeral and rebuild themselves.
+   Saves are debounced and written atomically (temp file + rename). */
+const DATA_DIR = process.env.DATA_DIR || "";
+const DATA_FILE = DATA_DIR ? path.join(DATA_DIR, "brain_arcade_data.json") : "";
+function loadData() {
+    if (!DATA_FILE) return;
+    try {
+        const d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+        if (d && typeof d.policies === "object") Object.assign(policies, d.policies);
+        if (d && typeof d.scores === "object") Object.assign(scores, d.scores);
+        console.log("Loaded saved data from " + DATA_FILE);
+    } catch (e) {
+        if (e.code !== "ENOENT") console.log("Could not read " + DATA_FILE + ": " + e.message);
+    }
+}
+let saveTimer = null;
+function saveDataSoon() {
+    if (!DATA_FILE || saveTimer) return;
+    saveTimer = setTimeout(function () {
+        saveTimer = null;
+        try {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+            const tmp = DATA_FILE + ".tmp";
+            fs.writeFileSync(tmp, JSON.stringify({ policies: policies, scores: scores }));
+            fs.renameSync(tmp, DATA_FILE);
+        } catch (e) { console.log("Could not save data: " + e.message); }
+    }, 2000);
+}
 
 /* ---- multiplayer (Brain Race) ----
    Presence is separate from the heartbeat devices list on purpose: a tablet is a
@@ -310,11 +345,13 @@ const server = http.createServer(async function (req, res) {
         if (b.findStopped) cmd.findOn = false;
 
         // --- score backup / restore (keyed by the device's stable id) ---
-        if (b.clearScores) { scores[b.deviceId] = {}; }
+        if (b.clearScores) { scores[b.deviceId] = {}; saveDataSoon(); }
         if (b.scores && typeof b.scores === "object") {
             var store = scores[b.deviceId] || (scores[b.deviceId] = {});
             // The device is authoritative for the games it reports a best for.
-            Object.keys(b.scores).forEach(function (g) { store[g] = b.scores[g]; });
+            var changed = false;
+            Object.keys(b.scores).forEach(function (g) { if (store[g] !== b.scores[g]) { store[g] = b.scores[g]; changed = true; } });
+            if (changed) saveDataSoon();
         }
 
         // --- drain queued remote taps for this device ---
@@ -470,6 +507,7 @@ const server = http.createServer(async function (req, res) {
         if (!b.deviceId) return send(res, 400, { error: "deviceId required" });
         delete devices[b.deviceId]; delete policies[b.deviceId]; delete commands[b.deviceId];
         delete frames[b.deviceId]; delete inputs[b.deviceId]; delete scores[b.deviceId]; delete photos[b.deviceId];
+        saveDataSoon();
         return send(res, 200, { ok: true });
     }
 
@@ -481,6 +519,7 @@ const server = http.createServer(async function (req, res) {
             locked: !!b.locked,
             allowedGames: Array.isArray(b.allowedGames) ? b.allowedGames : null
         };
+        saveDataSoon();
         return send(res, 200, { ok: true, policy: policies[b.deviceId] });
     }
 
@@ -680,4 +719,18 @@ const server = http.createServer(async function (req, res) {
     return send(res, 404, { error: "not found" });
 });
 
-server.listen(PORT, function () { console.log("Brain Arcade control server on :" + PORT); });
+loadData();
+server.listen(PORT, function () {
+    console.log("Brain Arcade control server on :" + PORT + (DATA_DIR ? " (persisting to " + DATA_DIR + ")" : " (in-memory)"));
+});
+
+// Exit promptly and cleanly on `docker stop` / redeploy (SIGTERM), flushing any
+// pending save first, instead of waiting out Docker's 10s kill timeout.
+["SIGTERM", "SIGINT"].forEach(function (sig) {
+    process.on(sig, function () {
+        try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+            if (DATA_FILE) { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify({ policies: policies, scores: scores })); } } catch (e) {}
+        server.close(function () { process.exit(0); });
+        setTimeout(function () { process.exit(0); }, 1500).unref();
+    });
+});
